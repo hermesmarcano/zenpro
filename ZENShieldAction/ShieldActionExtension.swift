@@ -4,8 +4,9 @@ import ManagedSettings
 /// (deep link registrado en la app principal); el secundario simplemente cierra
 /// el shield sin abrir la app bloqueada.
 ///
-/// [VERIFICAR] Los casos exactos de `ShieldActionResponse` (`.close`, `.defer`, …)
-/// se escribieron de memoria — confirmar contra ManagedSettings cuando haya CI real.
+/// Casos de `ShieldActionResponse` confirmados por CI (build real en macOS, Xcode 26.0.1).
+/// Pendiente de verificar en dispositivo real (no solo compilación): que `.defer`
+/// efectivamente abre la app contenedora — se valida en M3 con hardware.
 final class ShieldActionExtension: ShieldActionDelegate {
     override func handle(
         action: ShieldAction,

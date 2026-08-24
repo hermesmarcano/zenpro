@@ -5,9 +5,7 @@ import UIKit
 /// Pantalla nativa de bloqueo ("Shield") que ve el usuario al abrir una app bloqueada.
 /// Copy y colores según el mockup "Bloqueo-Shield" del canvas de diseño.
 ///
-/// [VERIFICAR] La firma exacta del inicializador de `ShieldConfiguration` se escribió
-/// de memoria (no hay Xcode local para comprobarla contra ManagedSettingsUI). Si CI
-/// falla aquí, es el primer punto a corregir con el error real del compilador.
+/// Firma de `ShieldConfiguration` confirmada por CI (build real en macOS, Xcode 26.0.1).
 final class ShieldConfigurationExtension: ShieldConfigurationDataSource {
     override func configuration(shielding application: Application) -> ShieldConfiguration {
         Self.zenConfiguration

@@ -22,7 +22,8 @@ struct QRAnchorTests {
     @Test func backupCodeIsSixDigits() {
         let anchor = QRAnchor(label: "Baño")
         #expect(anchor.backupCode.count == 6)
-        #expect(anchor.backupCode.allSatisfy(\.isNumber))
+        let allDigits = anchor.backupCode.allSatisfy { $0.isNumber }
+        #expect(allDigits)
     }
 
     @Test func matchesOwnBackupCode() {
