@@ -24,8 +24,9 @@ Widget de Lock Screen con el MIT: **fuera del MVP**, se evalúa en v1.1.
 ## 2. Frameworks de Apple por feature
 
 - **Alarma + QR**: AlarmKit (iOS 26+) para el disparo garantizado a nivel de OS
-  (salta DND, funciona con la app cerrada) **[VERIFICAR]**; AVFoundation +
-  `VNDetectBarcodesRequest` (Vision) para escanear; CoreImage para generar el QR.
+  (salta DND, funciona con la app cerrada) **[VERIFICAR]**; AVFoundation
+  (`AVCaptureMetadataOutput`, no Vision — más simple y es el estándar para
+  escaneo de QR en tiempo real) para escanear; CoreImage para generar el QR.
 - **Bloqueo de apps**: `FamilyControls` (autorización + picker), `ManagedSettings`
   (aplicar el shield), `DeviceActivity` (automatizar por horario vía la extensión).
 - **Ubicación**: `CoreLocation`, geofencing con `CLCircularRegion` (máx. ~20 regiones

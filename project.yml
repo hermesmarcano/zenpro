@@ -25,6 +25,9 @@ targets:
     deploymentTarget: "26.0"
     sources:
       - path: ZEN
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.hermesmarcano.zen
     info:
       path: ZEN/Info.plist
       properties:
@@ -59,6 +62,9 @@ targets:
     deploymentTarget: "26.0"
     sources:
       - path: ZENDeviceActivityMonitor
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.hermesmarcano.zen.DeviceActivityMonitor
     info:
       path: ZENDeviceActivityMonitor/Info.plist
       properties:
@@ -79,6 +85,9 @@ targets:
     deploymentTarget: "26.0"
     sources:
       - path: ZENShieldConfiguration
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.hermesmarcano.zen.ShieldConfiguration
     info:
       path: ZENShieldConfiguration/Info.plist
       properties:
@@ -99,6 +108,9 @@ targets:
     deploymentTarget: "26.0"
     sources:
       - path: ZENShieldAction
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.hermesmarcano.zen.ShieldAction
     info:
       path: ZENShieldAction/Info.plist
       properties:
@@ -119,5 +131,8 @@ targets:
     deploymentTarget: "26.0"
     sources:
       - path: ZENTests
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.hermesmarcano.zen.Tests
     dependencies:
       - target: ZEN
