@@ -1,0 +1,10 @@
+# Xcode / XcodeGen — el .xcodeproj se genera con `xcodegen generate`, nunca se commitea
+*.xcodeproj
+DerivedData/
+.build/
+.swiftpm/
+xcuserdata/
+*.xcuserstate
+
+# macOS
+.DS_Store

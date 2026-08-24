@@ -1,0 +1,123 @@
+name: ZEN
+options:
+  bundleIdPrefix: com.hermesmarcano
+  createIntermediateGroups: true
+  deploymentTarget:
+    iOS: "26.0"
+
+settings:
+  base:
+    # Swift 5 language mode a propósito: el SDK/Xcode es reciente (necesario para
+    # AlarmKit/Family Controls), pero el modo Swift 6 activa concurrency checking
+    # estricto por defecto — migrar a Sendable en todo el codebase es tarea
+    # deliberada de M6, no algo para pelear mientras se construye el MVP.
+    SWIFT_VERSION: "5.0"
+    IPHONEOS_DEPLOYMENT_TARGET: "26.0"
+    CODE_SIGN_STYLE: Automatic
+    GENERATE_INFOPLIST_FILE: NO
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+
+targets:
+  ZEN:
+    type: application
+    platform: iOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: ZEN
+    info:
+      path: ZEN/Info.plist
+      properties:
+        CFBundleDisplayName: ZEN
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        NSCameraUsageDescription: "ZEN necesita la cámara para escanear el código que apaga tu alarma."
+        NSLocationAlwaysAndWhenInUseUsageDescription: "ZEN usa tu ubicación para desbloquear apps automáticamente en los lugares que configures, como tu casa o el gimnasio."
+        NSLocationWhenInUseUsageDescription: "ZEN usa tu ubicación para desbloquear apps automáticamente en los lugares que configures."
+    entitlements:
+      path: ZEN/ZEN.entitlements
+      properties:
+        com.apple.developer.family-controls: true
+        com.apple.security.application-groups:
+          - group.com.hermesmarcano.zen
+    dependencies:
+      - target: ZENDeviceActivityMonitor
+        embed: true
+      - target: ZENShieldConfiguration
+        embed: true
+      - target: ZENShieldAction
+        embed: true
+    scheme:
+      testTargets:
+        - ZENTests
+      gatherCoverageData: true
+
+  ZENDeviceActivityMonitor:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: ZENDeviceActivityMonitor
+    info:
+      path: ZENDeviceActivityMonitor/Info.plist
+      properties:
+        CFBundleDisplayName: ZEN Monitor
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.deviceactivity.monitor-extension
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).DeviceActivityMonitorExtension
+    entitlements:
+      path: ZENDeviceActivityMonitor/ZENDeviceActivityMonitor.entitlements
+      properties:
+        com.apple.developer.family-controls: true
+        com.apple.security.application-groups:
+          - group.com.hermesmarcano.zen
+
+  ZENShieldConfiguration:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: ZENShieldConfiguration
+    info:
+      path: ZENShieldConfiguration/Info.plist
+      properties:
+        CFBundleDisplayName: ZEN Shield
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.ManagedSettingsUI.shield-configuration-service
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShieldConfigurationExtension
+    entitlements:
+      path: ZENShieldConfiguration/ZENShieldConfiguration.entitlements
+      properties:
+        com.apple.developer.family-controls: true
+        com.apple.security.application-groups:
+          - group.com.hermesmarcano.zen
+
+  ZENShieldAction:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: ZENShieldAction
+    info:
+      path: ZENShieldAction/Info.plist
+      properties:
+        CFBundleDisplayName: ZEN Shield Action
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.ManagedSettingsUI.shield-action-service
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShieldActionExtension
+    entitlements:
+      path: ZENShieldAction/ZENShieldAction.entitlements
+      properties:
+        com.apple.developer.family-controls: true
+        com.apple.security.application-groups:
+          - group.com.hermesmarcano.zen
+
+  ZENTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: ZENTests
+    dependencies:
+      - target: ZEN
