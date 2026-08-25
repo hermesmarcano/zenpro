@@ -38,12 +38,24 @@ enum AlarmScheduler {
     }
 
     private static func presentation() -> AlarmPresentation {
-        // Sin `stopButton`: apagar la alarma solo ocurre escaneando el QR dentro de
-        // la app — ver AlarmRingingView. El botón secundario abre ZEN en vez de
-        // silenciar directamente (`secondaryButtonBehavior: .custom`).
+        // AlarmKit exige un `stopButton` real y no-opcional: Apple no permite que
+        // ninguna app construya una alarma que el sistema no pueda silenciar
+        // directamente (la misma filosofía de plataforma que garantiza que el
+        // usuario siempre puede desactivar Screen Time desde Ajustes). No se puede
+        // ocultar ni deshabilitar — el botón es honesto sobre lo que hace ("Detener").
+        // El flujo de fricción real de ZEN vive en el botón secundario, que abre la
+        // app para escanear el QR (`secondaryButtonBehavior: .custom`).
+        //
+        // Rastrear cuándo se usó "Detener" sin pasar por el QR (para reflejarlo en
+        // el dashboard, sin fingir que no pasó) requiere un `stopIntent` propio —
+        // queda como mejora de v1.1, no bloquea el MVP.
         let alert = AlarmPresentation.Alert(
             title: "ZEN",
-            stopButton: nil,
+            stopButton: AlarmButton(
+                text: "Detener",
+                textColor: .white,
+                systemImageName: "xmark"
+            ),
             secondaryButton: AlarmButton(
                 text: "Abrir ZEN",
                 textColor: .black,
