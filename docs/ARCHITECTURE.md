@@ -141,6 +141,7 @@ se reprograma su reaplicación automática al vencer.
 | Cambio de zona horaria / DST | `DeviceActivitySchedule` maneja DST en horario local automáticamente (framework de Apple); el repeat de la alarma debe recalcularse en `significantTimeChangeNotification` |
 | Revisión de App Store para apps de Screen Time | Solicitar la entitlement `com.apple.developer.family-controls` apenas exista la cuenta Developer (puede tardar días/semanas en aprobarse) — bloqueante para TestFlight/App Store, no para desarrollo local |
 | Foto del QR tomada por otra persona / capturada de antemano | Aceptado como limitación conocida (igual que apps como Alarmy) — el objetivo es romper el hábito de un toque, no defender contra un atacante sofisticado; no vale la pena la complejidad de rotar el token |
+| Se borra un `QRAnchor` que una `AlarmConfig` sigue referenciando | Hoy no hay UI para borrar anclas, así que es teórico. Cuando se construya esa UI (M5/M6), debe bloquear o advertir el borrado si hay alarmas dependientes — nunca dejar que `AlarmRingingView` se quede sin ancla en runtime, porque ese estado no debe tener un botón de salida (sería una puerta trasera para apagar la alarma sin QR) |
 
 ## 6. Hoja de ruta por milestones
 
