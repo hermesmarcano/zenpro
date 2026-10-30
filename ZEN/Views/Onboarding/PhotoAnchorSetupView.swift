@@ -25,16 +25,20 @@ struct PhotoAnchorSetupView: View {
     }
 
     var body: some View {
-        VStack(spacing: 24) {
-            switch step {
-            case .label: labelStep
-            case .references: referencesStep
-            case .verify: verifyStep
-            case .cameraDenied: cameraDeniedStep
-            case .done: doneStep
+        ScrollView {
+            VStack(spacing: 24) {
+                switch step {
+                case .label: labelStep
+                case .references: referencesStep
+                case .verify: verifyStep
+                case .cameraDenied: cameraDeniedStep
+                case .done: doneStep
+                }
             }
+            .padding(24)
+            .frame(maxWidth: .infinity)
         }
-        .padding(24)
+        .scrollBounceBehavior(.basedOnSize)
         .animation(.default, value: step)
         .fullScreenCover(isPresented: $isShowingCamera) {
             PhotoCaptureView(
@@ -224,7 +228,7 @@ struct PhotoAnchorSetupView: View {
             if let anchor {
                 Text("Código de respaldo: \(anchor.backupCode)")
                     .font(.system(.body, design: .monospaced))
-                Text("Guárdalo: es la salida si la cámara falla o la foto no coincide.")
+                Text("Anótalo en un papel y déjalo en ese lugar: así solo lo tendrás a mano estando allí. Es la salida si la cámara falla o la foto no coincide, y no se habilita hasta pasados unos minutos de alarma.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)

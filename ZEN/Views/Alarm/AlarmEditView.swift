@@ -5,13 +5,18 @@ struct AlarmEditView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
 
-    @State private var time = Date()
+    @State private var time = AlarmEditView.defaultTime()
     @State private var repeatDays: Set<Weekday> = []
-    @State private var escalationEnabled = true
     @State private var selectedAnchorID: UUID?
     @State private var confirmedAnchors: [AnchorRef] = []
     @State private var isSaving = false
     @State private var errorMessage: String?
+
+    /// 07:00 de hoy. Con `Date()` la alarma nacería a la hora actual: AlarmKit la
+    /// programaría para dentro de 24 h (o sonaría al instante), nunca lo esperado.
+    private static func defaultTime() -> Date {
+        Calendar.current.date(bySettingHour: 7, minute: 0, second: 0, of: Date()) ?? Date()
+    }
 
     var body: some View {
         Form {
@@ -22,20 +27,16 @@ struct AlarmEditView: View {
             }
 
             Section("Repetir") {
-                HStack {
-                    ForEach(Weekday.allCases) { day in
+                HStack(spacing: 0) {
+                    ForEach(Weekday.mondayFirst) { day in
                         dayToggle(day)
                     }
                 }
             }
 
-            Section("Escalada de volumen") {
-                Toggle("Sube cada minuto hasta escanear el código", isOn: $escalationEnabled)
-            }
-
-            // Sin ancla confirmada no se puede guardar: una alarma sin QR asignado
-            // no cumple el propósito del producto (ver ARCHITECTURE.md).
-            Section("Ancla QR") {
+            // Sin ancla confirmada no se puede guardar: una alarma sin QR ni foto
+            // asignados no cumple el propósito del producto (ver ARCHITECTURE.md).
+            Section("Ancla") {
                 if confirmedAnchors.isEmpty {
                     Text("Necesitas confirmar un ancla (QR o foto) antes de poder crear una alarma.")
                         .foregroundStyle(.secondary)
@@ -55,7 +56,11 @@ struct AlarmEditView: View {
             }
         }
         .navigationTitle("Nueva alarma")
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Cancelar") { dismiss() }
+            }
             ToolbarItem(placement: .confirmationAction) {
                 Button("Guardar") { save() }
                     .disabled(isSaving || selectedAnchorID == nil)
@@ -67,6 +72,8 @@ struct AlarmEditView: View {
         }
     }
 
+    /// Botón de día con área táctil de 44 pt (mínimo de las HIG) y etiqueta completa para
+    /// VoiceOver: la inicial suelta ("X") no dice nada a quien no ve la pantalla.
     private func dayToggle(_ day: Weekday) -> some View {
         let isOn = repeatDays.contains(day)
         return Button {
@@ -76,25 +83,17 @@ struct AlarmEditView: View {
                 repeatDays.insert(day)
             }
         } label: {
-            Text(shortLabel(for: day))
-                .frame(width: 32, height: 32)
-                .background(isOn ? Color.accentColor : Color.secondary.opacity(0.15))
+            Text(day.shortLabel)
+                .font(.subheadline.weight(.semibold))
+                .frame(width: 36, height: 36)
+                .background(isOn ? Color.accentColor : Color.secondary.opacity(0.15), in: Circle())
                 .foregroundStyle(isOn ? Color.white : Color.primary)
-                .clipShape(Circle())
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-    }
-
-    private func shortLabel(for day: Weekday) -> String {
-        switch day {
-        case .sunday: "D"
-        case .monday: "L"
-        case .tuesday: "M"
-        case .wednesday: "X"
-        case .thursday: "J"
-        case .friday: "V"
-        case .saturday: "S"
-        }
+        .accessibilityLabel(day.fullName)
+        .accessibilityAddTraits(isOn ? .isSelected : [])
     }
 
     private func save() {
@@ -103,9 +102,9 @@ struct AlarmEditView: View {
         guard let hour = components.hour, let minute = components.minute else { return }
 
         isSaving = true
+        errorMessage = nil
         let store = AlarmStore(context: modelContext)
         let alarm = store.create(hour: hour, minute: minute, repeatDays: repeatDays, anchorID: selectedAnchorID)
-        alarm.escalationEnabled = escalationEnabled
 
         Task { @MainActor in
             do {
@@ -114,7 +113,7 @@ struct AlarmEditView: View {
             } catch {
                 // Si AlarmKit rechaza el scheduling, no dejamos una AlarmConfig
                 // huérfana sin alarma real programada detrás.
-                errorMessage = "No se pudo programar la alarma: \(error.localizedDescription)"
+                errorMessage = "No se pudo programar la alarma. Comprueba que ZEN tenga permiso para alarmas en Ajustes. (\(error.localizedDescription))"
                 store.delete(alarm)
             }
             isSaving = false

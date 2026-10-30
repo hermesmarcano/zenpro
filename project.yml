@@ -17,6 +17,9 @@ settings:
     GENERATE_INFOPLIST_FILE: NO
     MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "1"
+    # Solo iPhone: el diseño y los flujos (cámara, vibración, alarma de mesilla) son de
+    # iPhone, y la validación de App Store exige todas las orientaciones en iPad.
+    TARGETED_DEVICE_FAMILY: "1"
 
 targets:
   ZEN:
@@ -39,7 +42,10 @@ targets:
         # el usuario duerme, para poder reproducir el tono con volumen dinámico.
         UIBackgroundModes:
           - audio
-        NSCameraUsageDescription: "ZEN necesita la cámara para escanear el código que apaga tu alarma."
+        NSAlarmKitUsageDescription: "ZEN programa alarmas para despertarte y las apaga solo cuando llegas al punto que elegiste."
+        # Sin cifrado propio: evita la pregunta de cumplimiento de exportación en cada build.
+        ITSAppUsesNonExemptEncryption: false
+        NSCameraUsageDescription: "ZEN necesita la cámara para escanear el código o fotografiar el lugar que apaga tu alarma."
         NSLocationAlwaysAndWhenInUseUsageDescription: "ZEN usa tu ubicación para desbloquear apps automáticamente en los lugares que configures, como tu casa o el gimnasio."
         NSLocationWhenInUseUsageDescription: "ZEN usa tu ubicación para desbloquear apps automáticamente en los lugares que configures."
     entitlements:

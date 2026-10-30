@@ -10,6 +10,7 @@ final class MotionMonitor {
     private let lock = NSLock()
     private var classifier = MotionClassifier()
     private var latest: MotionState = .still
+    private var suppressedUntil: TimeInterval = 0
 
     init() {
         queue = OperationQueue()
@@ -27,12 +28,23 @@ final class MotionMonitor {
         return latest
     }
 
+    /// Descarta las muestras de los próximos `duration` segundos. El motor de vibración
+    /// del propio teléfono genera aceleraciones por encima del umbral de "en movimiento";
+    /// sin esto la alarma se detectaría a sí misma como "lo cogieron", bajaría el volumen,
+    /// dejaría de vibrar y oscilaría sin llegar a subir nunca.
+    func suppressSamples(for duration: TimeInterval) {
+        lock.lock()
+        suppressedUntil = max(suppressedUntil, ProcessInfo.processInfo.systemUptime + duration)
+        lock.unlock()
+    }
+
     func start() {
         guard manager.isDeviceMotionAvailable, !manager.isDeviceMotionActive else { return }
 
         lock.lock()
         classifier.reset()
         latest = .still
+        suppressedUntil = 0
         lock.unlock()
 
         manager.deviceMotionUpdateInterval = 1.0 / 25.0
@@ -50,8 +62,9 @@ final class MotionMonitor {
                     + rotation.z * rotation.z).squareRoot()
             )
             self.lock.lock()
+            defer { self.lock.unlock() }
+            guard sample.timestamp >= self.suppressedUntil else { return }
             self.latest = self.classifier.ingest(sample)
-            self.lock.unlock()
         }
     }
 

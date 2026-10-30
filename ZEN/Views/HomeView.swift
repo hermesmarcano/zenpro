@@ -16,11 +16,18 @@ struct HomeView: View {
     @State private var showingQRSetup = false
     @State private var showingPhotoSetup = false
     @State private var errorMessage: String?
+    /// Evita dobles toques mientras se arma/desarma (son operaciones asíncronas).
+    @State private var isBusy = false
+    /// Alarma cuya pantalla de apagado está presentada. Se separa de
+    /// `coordinator.activeRingingAlarmID` porque SwiftUI ignora un `fullScreenCover`
+    /// si ya hay una hoja abierta: primero se cierran las hojas y luego se presenta.
+    @State private var presentedRingingID: UUID?
 
     var body: some View {
         NavigationStack {
             List {
                 alarmsSection
+                warningsSection
                 anchorsSection
                 if let errorMessage {
                     Section {
@@ -45,13 +52,19 @@ struct HomeView: View {
             .sheet(isPresented: $showingQRSetup) { QRAnchorSetupView() }
             .sheet(isPresented: $showingPhotoSetup) { PhotoAnchorSetupView() }
             // Binding constante: la pantalla de apagado no se puede descartar deslizando.
-            .fullScreenCover(isPresented: .constant(coordinator.activeRingingAlarmID != nil)) {
+            .fullScreenCover(isPresented: .constant(presentedRingingID != nil)) {
                 ringingScreen
+            }
+            .onChange(of: coordinator.activeRingingAlarmID, initial: true) { _, id in
+                handleRingingChange(id)
             }
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active {
                     coordinator.session.reconcile()
                 }
+            }
+            .task {
+                await coordinator.recoverFromLaunch(alarms: alarms)
             }
         }
     }
@@ -81,36 +94,48 @@ struct HomeView: View {
 
     private func row(for alarm: AlarmConfig) -> some View {
         let isArmed = coordinator.session.armedAlarmID == alarm.id
-        return HStack {
+        return HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(String(format: "%02d:%02d", alarm.hour, alarm.minute))
                     .font(.system(.title, design: .monospaced))
-                Text(repeatSummary(for: alarm))
+                Text(Weekday.summary(of: alarm.repeatDays))
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                if isArmed, let fireDate = coordinator.session.armedFireDate {
+                    Text("Armada · suena \(fireDate.formatted(date: .abbreviated, time: .shortened))")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
             }
-            Spacer()
+            Spacer(minLength: 8)
             Button(isArmed ? "Desarmar" : "Armar") {
                 toggleArm(alarm)
             }
             .buttonStyle(.bordered)
             .tint(isArmed ? .orange : .accentColor)
+            .disabled(isBusy)
         }
     }
 
-    private func repeatSummary(for alarm: AlarmConfig) -> String {
-        let days = Weekday.allCases.filter { alarm.repeatDays.contains($0) }
-        guard !days.isEmpty else { return "Una vez" }
-        let names: [Weekday: String] = [
-            .monday: "L", .tuesday: "M", .wednesday: "X", .thursday: "J",
-            .friday: "V", .saturday: "S", .sunday: "D",
-        ]
-        return days.compactMap { names[$0] }.joined(separator: " ")
+    @ViewBuilder
+    private var warningsSection: some View {
+        let warnings = coordinator.session.armWarnings
+        if !warnings.isEmpty {
+            Section("Antes de dormir") {
+                ForEach(warnings, id: \.self) { warning in
+                    Label(warning.message, systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.orange)
+                }
+            }
+        }
     }
 
     private func toggleArm(_ alarm: AlarmConfig) {
+        guard !isBusy else { return }
+        isBusy = true
         errorMessage = nil
         Task { @MainActor in
+            defer { isBusy = false }
             do {
                 if coordinator.session.armedAlarmID == alarm.id {
                     await coordinator.session.disarm()
@@ -118,7 +143,7 @@ struct HomeView: View {
                     try await coordinator.session.arm(alarm)
                 }
             } catch {
-                errorMessage = "No se pudo armar la alarma: \(error.localizedDescription)"
+                errorMessage = "No se pudo armar la alarma. \(error.localizedDescription)"
             }
         }
     }
@@ -148,9 +173,33 @@ struct HomeView: View {
 
     // MARK: - Alarma sonando
 
+    /// Si suena una alarma se cierran las hojas abiertas (nueva alarma, alta de ancla) y
+    /// solo después se presenta la pantalla de apagado. Presentar un `fullScreenCover`
+    /// mientras hay una hoja abierta falla en silencio y la alarma sonaría sin pantalla.
+    private func handleRingingChange(_ id: UUID?) {
+        guard id != nil else {
+            presentedRingingID = nil
+            return
+        }
+
+        let hadOpenSheet = showingNewAlarm || showingQRSetup || showingPhotoSetup
+        showingNewAlarm = false
+        showingQRSetup = false
+        showingPhotoSetup = false
+
+        guard hadOpenSheet else {
+            presentedRingingID = id
+            return
+        }
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(700))
+            presentedRingingID = coordinator.activeRingingAlarmID
+        }
+    }
+
     @ViewBuilder
     private var ringingScreen: some View {
-        if let id = coordinator.activeRingingAlarmID,
+        if let id = presentedRingingID,
            let alarm = alarms.first(where: { $0.id == id }) {
             AlarmRingingView(
                 alarm: alarm,
@@ -165,7 +214,10 @@ struct HomeView: View {
             // en vez de dejar al usuario atrapado ante un fondo negro.
             Color.black
                 .ignoresSafeArea()
-                .onAppear { coordinator.systemAlarmIsRinging(id: nil) }
+                .onAppear {
+                    coordinator.systemAlarmIsRinging(id: nil)
+                    presentedRingingID = nil
+                }
         }
     }
 }

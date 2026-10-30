@@ -24,8 +24,10 @@ struct SmartVolumeProfile: Equatable {
     var maxFallPerSecond: Float = 0.35
     var maxRisePerSecond: Float = 0.5
 
-    var slowestVibrationInterval: TimeInterval = 2.0
-    var fastestVibrationInterval: TimeInterval = 0.6
+    /// El intervalo más corto debe dejar una ventana sin vibrar entre pulsos: durante
+    /// cada pulso se ignora el sensor de movimiento (ver `MotionMonitor.suppressSamples`).
+    var slowestVibrationInterval: TimeInterval = 2.5
+    var fastestVibrationInterval: TimeInterval = 1.2
 }
 
 struct SmartVolumeOutput: Equatable {

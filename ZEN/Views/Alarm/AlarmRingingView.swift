@@ -10,6 +10,7 @@ struct AlarmRingingView: View {
     var onDismissed: () -> Void
 
     @State private var isScanningQR = false
+    @State private var torchOn = false
     @State private var isShowingPhotoCamera = false
     @State private var isVerifyingPhoto = false
     @State private var photoFailures = 0
@@ -18,6 +19,10 @@ struct AlarmRingingView: View {
     @State private var cameraDenied = false
     @State private var showBackupCode = false
     @State private var backupCodeInput = ""
+    @FocusState private var backupCodeFocused: Bool
+    /// Cuándo apareció esta pantalla (reloj monotónico), para la espera del código de
+    /// respaldo. Si la app se reinicia la espera empieza de nuevo: más fricción, no menos.
+    @State private var shownAt = ProcessInfo.processInfo.systemUptime
 
     private let accent = Color(red: 0.89, green: 0.64, blue: 0.35)
 
@@ -38,6 +43,12 @@ struct AlarmRingingView: View {
         .onChange(of: isEngaged) { _, engaged in
             onEngagementChange(engaged)
         }
+        .onChange(of: backupCodeInput) { _, newValue in
+            let cleaned = BackupCodePolicy.sanitize(newValue)
+            if cleaned != newValue {
+                backupCodeInput = cleaned
+            }
+        }
         .fullScreenCover(isPresented: $isShowingPhotoCamera) {
             if case .photo(let photoAnchor) = anchor {
                 PhotoCaptureView(
@@ -55,65 +66,128 @@ struct AlarmRingingView: View {
 
     // MARK: - Contenido
 
+    /// Con scroll para que quepa en pantallas pequeñas (iPhone SE: 667 pt de alto) y con
+    /// texto grande de accesibilidad; el `minHeight` mantiene el botón principal abajo
+    /// cuando sobra espacio.
     private func ringingContent(anchor: AnchorRef) -> some View {
-        ZStack {
-            if isScanningQR, case .qr(let qrAnchor) = anchor {
-                QRScannerView { payload in
-                    handleScan(payload, anchor: qrAnchor)
-                }
-                .ignoresSafeArea()
-            }
-
-            VStack(spacing: 24) {
-                Text(timeString)
-                    .font(.system(size: 72, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(.white)
-
-                Text(instruction(for: anchor))
-                    .foregroundStyle(.white.opacity(0.7))
-                    .multilineTextAlignment(.center)
-
-                feedback
-
-                Spacer()
-
-                if showBackupCode {
-                    backupCodeField(anchor: anchor)
-                } else if isVerifyingPhoto {
-                    ProgressView("Analizando…")
-                        .tint(.white)
+        GeometryReader { proxy in
+            ScrollView {
+                VStack(spacing: 24) {
+                    Text(timeString)
+                        .font(.system(size: 72, weight: .semibold, design: .monospaced))
                         .foregroundStyle(.white)
-                } else {
-                    Button {
-                        beginDismissal(anchor: anchor)
-                    } label: {
-                        Image(systemName: icon(for: anchor))
-                            .font(.system(size: 44))
-                            .foregroundStyle(.black)
-                            .frame(width: 120, height: 120)
-                            .background(accent)
-                            .clipShape(Circle())
-                    }
-                    .accessibilityLabel(accessibilityLabel(for: anchor))
+                        .minimumScaleFactor(0.6)
+                        .lineLimit(1)
 
-                    Button("Usar código de respaldo") {
-                        showBackupCode = true
+                    Text(instruction(for: anchor))
+                        .foregroundStyle(.white.opacity(0.7))
+                        .multilineTextAlignment(.center)
+
+                    feedback
+
+                    if isScanningQR, case .qr(let qrAnchor) = anchor {
+                        QRScannerView(torchOn: torchOn) { payload in
+                            handleScan(payload, anchor: qrAnchor)
+                        }
+                        .aspectRatio(1, contentMode: .fit)
+                        .frame(maxWidth: 360)
+                        .clipShape(RoundedRectangle(cornerRadius: 20))
                     }
-                    .foregroundStyle(.white.opacity(0.6))
+
+                    Spacer(minLength: 16)
+
+                    controls(anchor: anchor)
                 }
+                .padding(32)
+                .frame(maxWidth: .infinity, minHeight: proxy.size.height)
             }
-            .padding(32)
+            .scrollBounceBehavior(.basedOnSize)
+        }
+    }
+
+    @ViewBuilder
+    private func controls(anchor: AnchorRef) -> some View {
+        if showBackupCode {
+            backupCodeField(anchor: anchor)
+        } else if isVerifyingPhoto {
+            ProgressView("Analizando…")
+                .tint(.white)
+                .foregroundStyle(.white)
+        } else if isScanningQR {
+            HStack(spacing: 16) {
+                Button {
+                    torchOn.toggle()
+                } label: {
+                    Label(
+                        torchOn ? "Apagar linterna" : "Linterna",
+                        systemImage: torchOn ? "flashlight.on.fill" : "flashlight.off.fill"
+                    )
+                }
+                .buttonStyle(.bordered)
+                .tint(.white)
+
+                Button("Cancelar") {
+                    isScanningQR = false
+                    torchOn = false
+                }
+                .buttonStyle(.bordered)
+                .tint(.white)
+            }
+        } else {
+            Button {
+                beginDismissal(anchor: anchor)
+            } label: {
+                Image(systemName: icon(for: anchor))
+                    .font(.system(size: 44))
+                    .foregroundStyle(.black)
+                    .frame(width: 120, height: 120)
+                    .background(accent)
+                    .clipShape(Circle())
+            }
+            .accessibilityLabel(accessibilityLabel(for: anchor))
+
+            backupCodeEntry
+        }
+    }
+
+    /// El código de respaldo no está disponible de inmediato: sin espera se podría teclear
+    /// desde la cama (el código se memoriza) y la alarma no exigiría ir a ningún sitio.
+    private var backupCodeEntry: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { _ in
+            let remaining = BackupCodePolicy.remaining(
+                since: shownAt,
+                now: ProcessInfo.processInfo.systemUptime
+            )
+            if remaining > 0 {
+                Text("Código de respaldo disponible en \(BackupCodePolicy.countdownText(remaining))")
+                    .font(.footnote)
+                    .foregroundStyle(.white.opacity(0.5))
+                    .multilineTextAlignment(.center)
+            } else {
+                Button("Usar código de respaldo") {
+                    showBackupCode = true
+                    backupCodeFocused = true
+                }
+                .foregroundStyle(.white.opacity(0.6))
+            }
         }
     }
 
     @ViewBuilder
     private var feedback: some View {
         if cameraDenied {
-            Text("Sin acceso a la cámara. Usa el código de respaldo.")
-                .foregroundStyle(.red)
+            VStack(spacing: 6) {
+                Text("Sin acceso a la cámara.")
+                    .foregroundStyle(.red)
+                if let url = URL(string: UIApplication.openSettingsURLString) {
+                    Link("Abrir Ajustes", destination: url)
+                        .font(.footnote)
+                }
+            }
         } else if photoAnalysisFailed {
             Text("No se pudo analizar la foto. Inténtalo de nuevo.")
                 .foregroundStyle(.red)
+                .multilineTextAlignment(.center)
         } else if let errorMessage {
             VStack(spacing: 6) {
                 Text(errorMessage)
@@ -122,6 +196,7 @@ struct AlarmRingingView: View {
                     Text("Prueba con más luz o usa el código de respaldo.")
                         .font(.footnote)
                         .foregroundStyle(.white.opacity(0.7))
+                        .multilineTextAlignment(.center)
                 }
             }
         }
@@ -166,28 +241,41 @@ struct AlarmRingingView: View {
         VStack(spacing: 12) {
             TextField("000000", text: $backupCodeInput)
                 .keyboardType(.numberPad)
+                .focused($backupCodeFocused)
                 .multilineTextAlignment(.center)
                 .font(.system(.title, design: .monospaced))
                 .foregroundStyle(.white)
-            Button("Confirmar") {
-                submitBackupCode(anchor: anchor)
+                .tint(.white)
+            HStack(spacing: 16) {
+                Button("Volver") {
+                    showBackupCode = false
+                    backupCodeInput = ""
+                    errorMessage = nil
+                }
+                .buttonStyle(.bordered)
+                .tint(.white)
+
+                Button("Confirmar") {
+                    submitBackupCode(anchor: anchor)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(backupCodeInput.count != BackupCodePolicy.length)
             }
-            .buttonStyle(.borderedProminent)
         }
     }
 
     // MARK: - Acciones
 
     /// Abre la cámara que corresponda al tipo de ancla, previa comprobación del permiso.
-    /// Si la cámara no está disponible se pasa directo al código de respaldo: nunca se
-    /// deja al usuario ante una pantalla negra sin salida.
+    /// Si no hay permiso se avisa con un acceso a Ajustes; el código de respaldo sigue
+    /// sujeto a su espera (si se abriera al instante, negar la cámara sería un atajo).
     private func beginDismissal(anchor: AnchorRef) {
         errorMessage = nil
         photoAnalysisFailed = false
+        cameraDenied = false
         Task { @MainActor in
             guard await CameraPermission.request() else {
                 cameraDenied = true
-                showBackupCode = true
                 return
             }
             switch anchor {
@@ -201,8 +289,9 @@ struct AlarmRingingView: View {
         if anchor.matches(scannedPayload: payload) {
             dismissAlarm()
         } else {
-            errorMessage = "Ese código no es el correcto."
-            isScanningQR = false
+            // El escáner sigue activo (un QR distinto se reporta de inmediato): basta
+            // con avisar; no hace falta cerrar la cámara.
+            errorMessage = "Ese no es el código de \(anchor.label)."
         }
     }
 

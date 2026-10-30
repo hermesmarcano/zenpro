@@ -259,3 +259,48 @@ con la curva de volumen.
 audio silenciosa mantenga viva la app toda la noche, la sensación real de la curva de
 volumen, los umbrales de `MotionClassifier`, el umbral de coincidencia de fotos, y que
 `.defer`/`OpenZENIntent` abran la app como se espera.
+
+## 8. Revisión completa tras alarma inteligente + ancla por foto
+
+Hallazgos de una revisión línea por línea de todo lo construido hasta aquí, y cómo se
+resolvió cada uno. Los marcados **[DISPOSITIVO]** no se pueden validar sin un iPhone.
+
+| # | Hallazgo | Resolución |
+|---|---|---|
+| 1 | El **código de respaldo era un atajo**: visible en la pantalla de la alarma, tecleable desde la cama (se memoriza); negar el permiso de cámara lo abría al instante | Compuerta `BackupCodePolicy`: solo tras 2 min desde que aparece la pantalla, con cuenta atrás, reloj monotónico (cambiar la hora no la salta). Negar la cámara ya no lo adelanta. El código va **impreso junto al QR** (hoja compartible) para que solo esté a la vista en el sitio del ancla |
+| 2 | El escáner QR **se trababa** tras leer cualquier QR ajeno: reportaba una sola vez por sesión | Se reporta un código distinto de inmediato y el mismo cada 2 s; el alta avisa "ese no es el código" (antes era silencioso) |
+| 3 | La pantalla de alarma **no aparecía si había una hoja abierta** (nueva alarma, alta de ancla): SwiftUI ignora un `fullScreenCover` con otra presentación activa | `HomeView` cierra las hojas y presenta la alarma 0.7 s después; también cubre arrancar ya con una alarma sonando |
+| 4 | Tras un cierre inesperado la alarma del sistema quedaba **desplazada +2 min para siempre** y la app no recordaba estar "armada" | Registro persistido (`ArmedRecordStore`) + `ArmedRecoveryPolicy` al abrir: re-armar si aún no era la hora; pedir QR/foto si pasó hace <30 min; restaurar la hora normal si pasó mucho. Apagar una alarma del sistema restaura su hora si es repetitiva |
+| 5 | La **vibración del propio teléfono se detectaba como "lo cogiste"** y la curva oscilaría sin subir nunca | El sensor se ignora 0.7 s durante cada pulso (`suppressSamples`); intervalo de vibración mínimo subido a 1.2 s para dejar ventana de detección **[DISPOSITIVO]** |
+| 6 | Faltaba `NSAlarmKitUsageDescription`; el proyecto se generaba para **iPhone + iPad** (App Store exige todas las orientaciones en iPad) | Clave añadida; `TARGETED_DEVICE_FAMILY = 1` (solo iPhone); `ITSAppUsesNonExemptEncryption = false` |
+| 7 | AlarmKit al programar sobre un id existente (la alarma normal, al armar) tiene comportamiento no verificado | `schedule` cancela primero: semántica de "reemplazar" garantizada |
+| 8 | El interruptor "Sube cada minuto…" **no hacía nada** (`escalationEnabled` solo se escribía) | Eliminado de la UI; el volumen inteligente es inherente a armar |
+| 9 | Al armar no se avisaba de volumen bajo, audio por Bluetooth/auriculares ni notificaciones desactivadas: fallos silenciosos que dejan la alarma muda o invisible | `ArmWarning` se muestra en "Antes de dormir" mientras aún se puede arreglar |
+| 10 | Armar/desarmar admitía doble toque mientras la operación asíncrona seguía en curso | `isBusy` desactiva los botones |
+| 11 | La hora por defecto de una alarma nueva era la hora actual | 07:00 |
+| 12 | No había forma de **imprimir o compartir el QR** (la app pedía "pégalo" sin ofrecer cómo); el QR no tenía zona de silencio y sobre fondo oscuro se lee mal | Hoja imprimible (QR + lugar + código) con `ShareLink`; zona de silencio de 4 módulos |
+| 13 | Botones de día de 32 pt sin etiqueta de VoiceOver; orden domingo-primero; sin botón Cancelar en la hoja | 44 pt, etiqueta "lunes"…, `isSelected`, lunes-primero, Cancelar |
+| 14 | La pantalla de alarma no hacía scroll (se corta en iPhone SE o con texto grande); la cámara QR a pantalla completa dejaba el texto ilegible y el botón grande sin función | `ScrollView` con altura mínima; cámara en recuadro, linterna, Cancelar; el código acepta solo 6 dígitos |
+| 15 | Linterna ausente: leer un QR en un baño a oscuras es el caso de uso principal | Linterna en el escáner (se apaga al salir de la vista) |
+
+### Compatibilidad de dispositivos
+
+- **iOS 26 es el mínimo** (AlarmKit). iOS 26 excluye iPhone XS/XR y anteriores: corre en
+  iPhone 11 y posteriores y en iPhone SE (2.ª gen.) en adelante. Quien tenga un iPhone
+  anterior no podría instalarla; las funciones que no usan AlarmKit (QR, fotos, volumen
+  inteligente) funcionarían en iOS 17+ si se quisiera ampliar el soporte.
+- Ancho mínimo 375 pt (SE 2/3, 12 mini): la fila de días (7 × ≥44 pt) y la pantalla de
+  alarma (con scroll) caben; sin Dynamic Island ni Face ID no cambia nada (todo usa
+  *safe areas*). Solo iPhone, solo vertical.
+- La vibración usa `AudioServices`, disponible en todos los iPhone; sin motor háptico
+  fino la intensidad no es ajustable (solo cadencia).
+
+### Pendiente conocido (no bloquea, se anota)
+
+- No se pueden **editar ni pausar** alarmas (solo crear/borrar): llega con el dashboard de M5.
+- Falta el **icono de la app** (`Assets.xcassets`): imprescindible antes de subir a TestFlight.
+- La orientación EXIF de la foto depende de cómo se sostenga el teléfono
+  (`AVCaptureDevice.RotationCoordinator` lo resolvería) **[DISPOSITIVO]**.
+- El armado es **manual cada noche**; un recordatorio para armar antes de dormir
+  (notificación local) sería la mejora de uso más valiosa.
+- Cadenas en español fijas (sin `Localizable`), hora en formato 24 h.

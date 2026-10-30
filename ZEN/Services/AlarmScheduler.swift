@@ -19,6 +19,10 @@ enum AlarmScheduler {
     /// (red de seguridad mientras la alarma inteligente está armada: si iOS cierra
     /// ZEN durante la noche, esta alarma suena igual, con ese retraso).
     static func schedule(_ config: AlarmConfig, delayMinutes: Int = 0) async throws {
+        // Programar sobre un id existente (la alarma normal, al armar) debe reemplazarla;
+        // cancelar primero lo garantiza sin depender de cómo trate AlarmKit el duplicado.
+        try? await AlarmManager.shared.cancel(id: config.id)
+
         let attributes = AlarmAttributes<Metadata>(
             presentation: presentation(),
             metadata: Metadata(alarmConfigID: config.id),

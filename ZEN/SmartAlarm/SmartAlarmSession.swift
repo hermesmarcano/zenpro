@@ -1,5 +1,7 @@
 import AudioToolbox
+import AVFoundation
 import Foundation
+import UserNotifications
 
 /// Alarma inteligente armada: mientras está armada ZEN mantiene viva una sesión de
 /// audio en segundo plano; a la hora, reproduce el tono con la curva de
@@ -26,9 +28,32 @@ final class SmartAlarmSession: ObservableObject {
         case alreadyRinging
     }
 
+    /// Cosas que pueden hacer que la alarma armada no se oiga o no se vea; se muestran al
+    /// armar, cuando todavía se puede arreglar (a las 6 a. m. ya no).
+    enum ArmWarning: Hashable {
+        case lowVolume
+        case externalAudioRoute
+        case notificationsDisabled
+
+        var message: String {
+            switch self {
+            case .lowVolume:
+                "El volumen del teléfono está bajo. ZEN suena con el volumen multimedia: súbelo antes de dormir."
+            case .externalAudioRoute:
+                "El audio sale por auriculares o Bluetooth, no por el altavoz del teléfono."
+            case .notificationsDisabled:
+                "Las notificaciones están desactivadas: al sonar tendrás que abrir ZEN a mano."
+            }
+        }
+    }
+
     static let safetyNetMinutes = 2
+    /// Lo que dura el pulso de vibración más su "eco"; el sensor de movimiento se ignora
+    /// durante ese tiempo para que la alarma no se detecte a sí misma.
+    static let vibrationBlankout: TimeInterval = 0.7
 
     @Published private(set) var state: State = .idle
+    @Published private(set) var armWarnings: [ArmWarning] = []
 
     private let player = AlarmTonePlayer()
     private let motion = MotionMonitor()
@@ -45,6 +70,10 @@ final class SmartAlarmSession: ObservableObject {
 
     var ringingAlarmID: UUID? {
         if case .ringing(let id) = state { id } else { nil }
+    }
+
+    var armedFireDate: Date? {
+        if case .armed(_, let fireDate) = state { fireDate } else { nil }
     }
 
     // MARK: - Armar / desarmar
@@ -78,9 +107,11 @@ final class SmartAlarmSession: ObservableObject {
 
         _ = await WakeNotification.requestAuthorization()
         await WakeNotification.schedule(at: fireDate, label: Self.timeString(alarm))
+        armWarnings = await Self.currentWarnings()
 
         armedAlarm = alarm
         state = .armed(alarmID: alarm.id, fireDate: fireDate)
+        ArmedRecordStore.save(ArmedRecord(alarmID: alarm.id, fireDate: fireDate))
         startTicker(interval: 1)
     }
 
@@ -119,6 +150,7 @@ final class SmartAlarmSession: ObservableObject {
             startRinging()
         } else if recomputed != currentFireDate {
             state = .armed(alarmID: alarmID, fireDate: recomputed)
+            ArmedRecordStore.save(ArmedRecord(alarmID: alarmID, fireDate: recomputed))
             Task {
                 await WakeNotification.schedule(at: recomputed, label: Self.timeString(alarm))
             }
@@ -159,6 +191,7 @@ final class SmartAlarmSession: ObservableObject {
             player?.setVolume(output.volume)
 
             if let interval = output.vibrationInterval, now - lastVibration >= interval {
+                motion.suppressSamples(for: Self.vibrationBlankout)
                 AudioServicesPlaySystemSound(kSystemSoundID_Vibrate)
                 lastVibration = now
             }
@@ -173,7 +206,9 @@ final class SmartAlarmSession: ObservableObject {
         player?.stop()
         volumeController = nil
         userEngaged = false
+        armWarnings = []
         WakeNotification.cancel()
+        ArmedRecordStore.clear()
 
         let alarm = armedAlarm
         armedAlarm = nil
@@ -199,7 +234,36 @@ final class SmartAlarmSession: ObservableObject {
         ticker = nil
     }
 
+    private static func currentWarnings() async -> [ArmWarning] {
+        var warnings: [ArmWarning] = []
+
+        let audio = AVAudioSession.sharedInstance()
+        if audio.outputVolume < 0.4 {
+            warnings.append(.lowVolume)
+        }
+        let builtInPorts: Set<AVAudioSession.Port> = [.builtInSpeaker, .builtInReceiver]
+        if audio.currentRoute.outputs.contains(where: { !builtInPorts.contains($0.portType) }) {
+            warnings.append(.externalAudioRoute)
+        }
+
+        let settings = await UNUserNotificationCenter.current().notificationSettings()
+        if settings.authorizationStatus == .denied {
+            warnings.append(.notificationsDisabled)
+        }
+        return warnings
+    }
+
     private static func timeString(_ alarm: AlarmConfig) -> String {
         String(format: "%02d:%02d", alarm.hour, alarm.minute)
+    }
+}
+
+extension SmartAlarmSession.ArmError: LocalizedError {
+    var errorDescription: String? {
+        switch self {
+        case .noUpcomingFireDate: "No se pudo calcular la próxima hora de la alarma."
+        case .audioUnavailable: "El audio del teléfono no está disponible para ZEN."
+        case .alreadyRinging: "La alarma está sonando: apágala antes de armar otra."
+        }
     }
 }

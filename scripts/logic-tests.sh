@@ -19,12 +19,14 @@ LOGIC_SOURCES=(
   ZEN/Models/Weekday.swift
   ZEN/SmartAlarm/ScheduleMath.swift
   ZEN/SmartAlarm/AlarmToneSynth.swift
+  ZEN/SmartAlarm/ArmedRecoveryPolicy.swift
 )
 LOGIC_TESTS=(
   ZENTests/MotionClassifierTests.swift
   ZENTests/SmartVolumeControllerTests.swift
   ZENTests/PhotoMatchPolicyTests.swift
   ZENTests/ScheduleMathTests.swift
+  ZENTests/ArmedRecoveryPolicyTests.swift
 )
 
 WORK="$(mktemp -d)"

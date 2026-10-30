@@ -8,7 +8,10 @@ struct QRAnchorSetupView: View {
     @State private var label = ""
     @State private var anchor: QRAnchor?
     @State private var qrImage: UIImage?
+    @State private var printableImage: UIImage?
     @State private var step: Step = .label
+    @State private var torchOn = false
+    @State private var scanError: String?
     @State private var backupCodeInput = ""
     @State private var backupCodeError = false
 
@@ -22,23 +25,27 @@ struct QRAnchorSetupView: View {
     }
 
     var body: some View {
-        VStack(spacing: 24) {
-            switch step {
-            case .label:
-                labelStep
-            case .showQR:
-                qrStep
-            case .scanning:
-                scanningStep
-            case .cameraDenied:
-                cameraDeniedStep
-            case .backupCode:
-                backupCodeStep
-            case .confirmed:
-                confirmedStep
+        ScrollView {
+            VStack(spacing: 24) {
+                switch step {
+                case .label:
+                    labelStep
+                case .showQR:
+                    qrStep
+                case .scanning:
+                    scanningStep
+                case .cameraDenied:
+                    cameraDeniedStep
+                case .backupCode:
+                    backupCodeStep
+                case .confirmed:
+                    confirmedStep
+                }
             }
+            .padding(24)
+            .frame(maxWidth: .infinity)
         }
-        .padding(24)
+        .scrollBounceBehavior(.basedOnSize)
         .animation(.default, value: step)
     }
 
@@ -62,7 +69,11 @@ struct QRAnchorSetupView: View {
         let store = AnchorStore(context: modelContext)
         let created = store.pendingOrNewAnchor(label: label.trimmingCharacters(in: .whitespaces))
         anchor = created
-        qrImage = QRCodeGenerator.image(for: created.qrPayload)
+        let qr = QRCodeGenerator.image(for: created.qrPayload)
+        qrImage = qr
+        printableImage = qr.flatMap {
+            PrintableAnchor.image(label: created.label, backupCode: created.backupCode, qr: $0)
+        }
         step = .showQR
     }
 
@@ -70,7 +81,7 @@ struct QRAnchorSetupView: View {
 
     private var qrStep: some View {
         VStack(spacing: 20) {
-            Text("Pega este código en un punto fijo, fuera de tu cuarto.")
+            Text("Imprime este código y pégalo en un punto fijo, fuera de tu cuarto.")
                 .font(.title3.bold())
                 .multilineTextAlignment(.center)
 
@@ -79,7 +90,8 @@ struct QRAnchorSetupView: View {
                     .interpolation(.none)
                     .resizable()
                     .scaledToFit()
-                    .frame(width: 200, height: 200)
+                    .frame(maxWidth: 240, maxHeight: 240)
+                    .accessibilityLabel("Código QR de \(anchor?.label ?? "tu ancla")")
             }
 
             if let anchor {
@@ -87,10 +99,21 @@ struct QRAnchorSetupView: View {
                     Text("Código de respaldo: \(anchor.backupCode)")
                         .font(.system(.footnote, design: .monospaced))
                         .foregroundStyle(.secondary)
-                    Text("Guárdalo por si falla la cámara.")
+                    Text("Ya va impreso en la hoja, junto al QR. Es la salida si falla la cámara, y no se habilita hasta pasados unos minutos de alarma.")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
                 }
+            }
+
+            if let printableImage, let anchor {
+                ShareLink(
+                    item: Image(uiImage: printableImage),
+                    preview: SharePreview("Código de \(anchor.label)", image: Image(uiImage: printableImage))
+                ) {
+                    Label("Compartir para imprimir", systemImage: "square.and.arrow.up")
+                }
+                .buttonStyle(.bordered)
             }
 
             Button("Ya lo pegué — confirmar ubicación") {
@@ -107,6 +130,7 @@ struct QRAnchorSetupView: View {
     }
 
     private func beginScanning() {
+        scanError = nil
         Task { @MainActor in
             let granted = await CameraPermission.request()
             step = granted ? .scanning : .cameraDenied
@@ -116,26 +140,55 @@ struct QRAnchorSetupView: View {
     // MARK: - Paso 3: escaneo real
 
     private var scanningStep: some View {
-        ZStack {
-            QRScannerView { payload in
+        VStack(spacing: 16) {
+            Text("Apunta al código pegado en \(anchor?.label ?? "el lugar").")
+                .font(.headline)
+                .multilineTextAlignment(.center)
+
+            QRScannerView(torchOn: torchOn) { payload in
                 handleScan(payload)
             }
-            .ignoresSafeArea()
+            .aspectRatio(1, contentMode: .fit)
+            .frame(maxWidth: 360)
+            .clipShape(RoundedRectangle(cornerRadius: 20))
 
-            VStack {
-                Spacer()
+            if let scanError {
+                Text(scanError)
+                    .foregroundStyle(.red)
+                    .font(.footnote)
+                    .multilineTextAlignment(.center)
+            }
+
+            HStack(spacing: 16) {
+                Button {
+                    torchOn.toggle()
+                } label: {
+                    Label(
+                        torchOn ? "Apagar linterna" : "Linterna",
+                        systemImage: torchOn ? "flashlight.on.fill" : "flashlight.off.fill"
+                    )
+                }
+                .buttonStyle(.bordered)
+
                 Button("Usar el código de respaldo") {
+                    torchOn = false
                     step = .backupCode
                 }
                 .buttonStyle(.bordered)
-                .padding(.bottom, 40)
             }
         }
     }
 
     private func handleScan(_ payload: String) {
-        guard let anchor, anchor.matches(scannedPayload: payload) else { return }
-        confirm(anchor)
+        guard let anchor else { return }
+        if anchor.matches(scannedPayload: payload) {
+            torchOn = false
+            confirm(anchor)
+        } else {
+            // El escáner sigue activo: sin este aviso, leer un QR cualquiera (un póster)
+            // parecía no hacer nada.
+            scanError = "Ese no es el código de ZEN que generaste. Apunta al que imprimiste."
+        }
     }
 
     // MARK: - Cámara denegada
@@ -144,9 +197,13 @@ struct QRAnchorSetupView: View {
         VStack(spacing: 16) {
             Text("No tenemos acceso a la cámara.")
                 .font(.title3.bold())
-            Text("Puedes activarlo en Ajustes, o confirmar con el código de respaldo por ahora.")
+            Text("Actívala en Ajustes, o confirma por ahora con el código de respaldo.")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
+            if let url = URL(string: UIApplication.openSettingsURLString) {
+                Link("Abrir Ajustes", destination: url)
+                    .buttonStyle(.bordered)
+            }
             Button("Usar código de respaldo") {
                 step = .backupCode
             }
@@ -165,6 +222,13 @@ struct QRAnchorSetupView: View {
                 .keyboardType(.numberPad)
                 .multilineTextAlignment(.center)
                 .font(.system(.title2, design: .monospaced))
+                .onChange(of: backupCodeInput) { _, newValue in
+                    let cleaned = BackupCodePolicy.sanitize(newValue)
+                    if cleaned != newValue {
+                        backupCodeInput = cleaned
+                    }
+                    backupCodeError = false
+                }
             if backupCodeError {
                 Text("Ese código no coincide.")
                     .foregroundStyle(.red)
@@ -174,7 +238,7 @@ struct QRAnchorSetupView: View {
                 submitBackupCode()
             }
             .buttonStyle(.borderedProminent)
-            .disabled(backupCodeInput.count != 6)
+            .disabled(backupCodeInput.count != BackupCodePolicy.length)
         }
     }
 
