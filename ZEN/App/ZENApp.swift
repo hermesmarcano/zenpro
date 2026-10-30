@@ -10,6 +10,7 @@ struct ZENApp: App {
             container = try ModelContainer(
                 for: AlarmConfig.self,
                 QRAnchor.self,
+                PhotoAnchor.self,
                 BlockRuleSet.self,
                 LocationRule.self,
                 TaskItem.self,

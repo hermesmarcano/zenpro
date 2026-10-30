@@ -15,10 +15,12 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 LOGIC_SOURCES=(
   ZEN/SmartAlarm/MotionClassifier.swift
   ZEN/SmartAlarm/SmartVolumeController.swift
+  ZEN/Photo/PhotoMatchPolicy.swift
 )
 LOGIC_TESTS=(
   ZENTests/MotionClassifierTests.swift
   ZENTests/SmartVolumeControllerTests.swift
+  ZENTests/PhotoMatchPolicyTests.swift
 )
 
 WORK="$(mktemp -d)"

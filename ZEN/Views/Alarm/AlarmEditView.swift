@@ -9,7 +9,7 @@ struct AlarmEditView: View {
     @State private var repeatDays: Set<Weekday> = []
     @State private var escalationEnabled = true
     @State private var selectedAnchorID: UUID?
-    @State private var confirmedAnchors: [QRAnchor] = []
+    @State private var confirmedAnchors: [AnchorRef] = []
     @State private var isSaving = false
     @State private var errorMessage: String?
 
@@ -37,12 +37,12 @@ struct AlarmEditView: View {
             // no cumple el propósito del producto (ver ARCHITECTURE.md).
             Section("Ancla QR") {
                 if confirmedAnchors.isEmpty {
-                    Text("Necesitas confirmar un ancla QR antes de poder crear una alarma.")
+                    Text("Necesitas confirmar un ancla (QR o foto) antes de poder crear una alarma.")
                         .foregroundStyle(.secondary)
                 } else {
                     Picker("Ancla", selection: $selectedAnchorID) {
                         ForEach(confirmedAnchors) { anchor in
-                            Text(anchor.label).tag(Optional(anchor.id))
+                            Text("\(anchor.label) · \(anchor.kindName)").tag(Optional(anchor.id))
                         }
                     }
                 }
@@ -62,7 +62,7 @@ struct AlarmEditView: View {
             }
         }
         .task {
-            confirmedAnchors = AnchorStore(context: modelContext).confirmedAnchors()
+            confirmedAnchors = AnchorStore(context: modelContext).confirmedAnchorRefs()
             selectedAnchorID = confirmedAnchors.first?.id
         }
     }
@@ -125,6 +125,6 @@ struct AlarmEditView: View {
 #Preview {
     NavigationStack {
         AlarmEditView()
-            .modelContainer(for: [AlarmConfig.self, QRAnchor.self], inMemory: true)
+            .modelContainer(for: [AlarmConfig.self, QRAnchor.self, PhotoAnchor.self], inMemory: true)
     }
 }
