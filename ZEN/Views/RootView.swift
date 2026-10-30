@@ -1,22 +1,15 @@
 import SwiftUI
 
+/// Punto de entrada. Se mantiene como delgado envoltorio para que el dashboard de M5
+/// reemplace `HomeView` sin tocar `ZENApp`.
 struct RootView: View {
     var body: some View {
-        VStack(spacing: 12) {
-            Text("ZEN")
-                .font(.system(.largeTitle, design: .monospaced))
-                .fontWeight(.semibold)
-            Text("Fundaciones del proyecto — M0")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.black)
-        .foregroundStyle(Color.white)
-        .ignoresSafeArea()
+        HomeView()
     }
 }
 
 #Preview {
     RootView()
+        .environmentObject(AlarmCoordinator.shared)
+        .modelContainer(for: [AlarmConfig.self, QRAnchor.self, PhotoAnchor.self], inMemory: true)
 }

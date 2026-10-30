@@ -27,6 +27,7 @@ struct ZENApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
+                .environmentObject(AlarmCoordinator.shared)
         }
         .modelContainer(container)
     }

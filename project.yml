@@ -35,6 +35,10 @@ targets:
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
+        # Alarma inteligente armada: la app sigue viva con una sesión de audio mientras
+        # el usuario duerme, para poder reproducir el tono con volumen dinámico.
+        UIBackgroundModes:
+          - audio
         NSCameraUsageDescription: "ZEN necesita la cámara para escanear el código que apaga tu alarma."
         NSLocationAlwaysAndWhenInUseUsageDescription: "ZEN usa tu ubicación para desbloquear apps automáticamente en los lugares que configures, como tu casa o el gimnasio."
         NSLocationWhenInUseUsageDescription: "ZEN usa tu ubicación para desbloquear apps automáticamente en los lugares que configures."

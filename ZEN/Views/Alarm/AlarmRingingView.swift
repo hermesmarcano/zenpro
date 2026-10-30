@@ -235,11 +235,10 @@ struct AlarmRingingView: View {
         dismissAlarm()
     }
 
+    /// La vista solo demuestra presencia; silenciar la alarma (sesión inteligente o
+    /// alarma del sistema) lo decide `AlarmCoordinator` según cómo esté sonando.
     private func dismissAlarm() {
-        Task { @MainActor in
-            try? await AlarmScheduler.stop(alarm)
-            onDismissed()
-        }
+        onDismissed()
     }
 }
 

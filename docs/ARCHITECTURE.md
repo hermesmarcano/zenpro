@@ -171,11 +171,12 @@ Cada milestone se ejecuta bajo el ciclo de planificación/código/revisión defi
 El usuario registra un punto (ej. "Patio") con 1–3 fotos de referencia tomadas con la
 cámara; para apagar la alarma debe tomar otra foto del mismo lugar.
 
-- **Comparación**: `VNGenerateImageFeaturePrintRequest` (Vision) con la revisión
-  fijada explícitamente, distancia entre feature prints; se acepta si la distancia
-  mínima contra cualquier referencia es menor al umbral. Se guardan las fotos de
-  referencia normalizadas (no los feature prints) y se recalculan al comparar: así un
-  cambio de revisión de Vision en una versión futura de iOS no invalida el ancla.
+- **Comparación**: `VNGenerateImageFeaturePrintRequest` (Vision), distancia entre
+  feature prints; se acepta si la distancia mínima contra cualquier referencia es
+  estrictamente menor al umbral. Se guardan las fotos de referencia normalizadas (no
+  los feature prints) y los de la candidata y las referencias se calculan juntos en cada
+  comparación: así comparten siempre la misma revisión de Vision y un cambio de
+  revisión en una versión futura de iOS no invalida el ancla.
 - **Solo cámara en vivo**: sin acceso a la fototeca, para que no se pueda "enviar" una
   foto vieja. La foto de referencia **no se muestra** en la pantalla de la alarma (solo
   la etiqueta del lugar), para no regalar la respuesta.
@@ -234,3 +235,26 @@ con la curva de volumen.
 | Auriculares/Bluetooth conectados | La ruta de salida queda fuera de control de la app; se documenta como riesgo (el sonido podría ir a los auriculares). Pendiente de decidir en M6 |
 | Reloj/cambio de zona horaria con la sesión armada | La hora de disparo se recalcula desde `AlarmConfig` al reanudar la app |
 | Se sube/baja el volumen físico del teléfono | El volumen de ZEN es relativo al del sistema; se recomienda dejarlo alto al armar |
+
+### 7.3 Piezas y flujo (implementado)
+
+- `SmartAlarmSession` (armar/desarmar, sonar, red de seguridad) y `AlarmCoordinator`
+  (decide qué alarma muestra la pantalla de apagado y cómo se silencia: sesión
+  inteligente -> `finishRinging`; alarma del sistema sin armar -> `AlarmScheduler.stop`).
+- `WakeNotification`: aviso sin sonido en la pantalla de bloqueo a la hora de la alarma.
+  Con la alarma armada el tono suena desde ZEN pero la app no se abre sola; este aviso
+  es lo que se toca para llegar a la pantalla de apagado. Bajo un Focus/No Molestar el
+  aviso puede no mostrarse; el tono sí suena y la alarma del sistema entra a los 2 min.
+- `OpenZENIntent`: acción del botón "Abrir ZEN" de la alarma del sistema (sin armar).
+  Abre la app y fija la alarma que está sonando.
+- `HomeView`: pantalla mínima funcional (alarmas, altas de ancla QR/foto, armar). El
+  dashboard del diseño llega en M5.
+- Las reglas viven en tipos puros con tests locales (`SmartVolumeController`,
+  `MotionClassifier`, `NextFireCalculator`, `ScheduleShift`, `AlarmToneSynth`,
+  `PhotoMatchPolicy`); `AlarmTonePlayer`, `MotionMonitor` y la vibración son adaptadores
+  finos que solo se validan en un dispositivo real.
+
+**Pendiente de validar en dispositivo** (no es posible sin hardware): que la sesión de
+audio silenciosa mantenga viva la app toda la noche, la sensación real de la curva de
+volumen, los umbrales de `MotionClassifier`, el umbral de coincidencia de fotos, y que
+`.defer`/`OpenZENIntent` abran la app como se espera.
