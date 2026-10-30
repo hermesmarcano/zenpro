@@ -14,10 +14,14 @@ enum PhotoMatchPolicy {
     /// el código de respaldo.
     static let failuresBeforeHint = 3
 
-    /// Mejor (menor) distancia válida. Ignora NaN, infinitos y negativos para que una
-    /// referencia corrupta no pueda ganar la comparación ni forzar un falso positivo.
+    /// Mejor (menor) distancia válida. Ignora NaN, infinitos, negativos y **ceros**:
+    /// una distancia exactamente 0 no ocurre entre dos fotos tomadas por separado (el
+    /// ruido del sensor basta para que sea > 0). Sí ocurre con un modelo de Vision
+    /// degenerado —el simulador devuelve 0 para imágenes distintas—, y si eso pasara
+    /// en silencio en un dispositivo "todo coincide" apagaría la alarma sin ir al
+    /// lugar. Descartarlas lo convierte en "no se pudo analizar", nunca en un acierto.
     static func bestDistance(_ distances: [Float]) -> Float? {
-        distances.filter { $0.isFinite && $0 >= 0 }.min()
+        distances.filter { $0.isFinite && $0 > 0 }.min()
     }
 
     /// Coincide si la mejor distancia contra cualquier referencia es estrictamente

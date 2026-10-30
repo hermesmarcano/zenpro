@@ -193,6 +193,7 @@ cámara; para apagar la alarma debe tomar otra foto del mismo lugar.
 | Orientación distinta entre foto de referencia y de verificación | Ambas se normalizan (orientación corregida, máx. 800 px) antes de comparar |
 | Fotografiar una foto/pantalla del lugar | Limitación aceptada (igual que fotografiar un QR impreso) |
 | Revisión de feature print incomparable | La distancia lanza error → se trata como "no coincide"; las referencias se recalculan siempre |
+| Modelo de Vision degenerado (el simulador devuelve distancia 0 para imágenes distintas — visto en CI) | Una distancia exactamente 0 se descarta como inválida: nunca ocurre entre dos fotos tomadas por separado, y de aceptarla "todo coincidiría" y la alarma se apagaría sin ir al lugar. Resultado: "no se pudo analizar" (y la verificación del alta lo delata al configurar). Los tests de semántica de similitud solo corren en dispositivo; en el simulador solo se prueba que el pipeline funciona |
 
 ### 7.2 Volumen inteligente (modo armado)
 

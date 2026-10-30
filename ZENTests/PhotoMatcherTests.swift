@@ -2,6 +2,18 @@ import Testing
 import UIKit
 @testable import ZEN
 
+/// El simulador de iOS no trae el modelo real de feature prints de Vision (CI muestra
+/// `fopen failed for data file … Invalidating cache`) y devuelve distancia 0 para
+/// imágenes distintas. Los tests que comparan *semántica* de similitud solo tienen
+/// sentido en un dispositivo; en el simulador solo se comprueba que el pipeline corre.
+private let visionIsMeaningful: Bool = {
+    #if targetEnvironment(simulator)
+    return false
+    #else
+    return true
+    #endif
+}()
+
 struct PhotoMatcherTests {
     private func render(size: CGSize, scale: CGFloat = 1, draw: (CGContext, CGSize) -> Void) -> UIImage {
         let format = UIGraphicsImageRendererFormat.default()
@@ -81,7 +93,17 @@ struct PhotoMatcherTests {
         #expect(PhotoNormalizer.normalized(UIImage()) == nil)
     }
 
-    @Test func sameSceneIsCloserThanADifferentScene() throws {
+    @Test func distancesPipelineReturnsOneValidValuePerReference() throws {
+        let first = try #require(patio().cgImage)
+        let second = try #require(stripes().cgImage)
+        let result = try PhotoMatcher.distances(candidate: first, references: [first, second])
+        #expect(result.count == 2)
+        let allValid = result.allSatisfy { $0.isFinite && $0 >= 0 }
+        #expect(allValid)
+    }
+
+    @Test(.enabled(if: visionIsMeaningful, "Vision no produce feature prints significativos en el simulador"))
+    func sameSceneIsCloserThanADifferentScene() throws {
         let reference = try #require(patio().cgImage)
         let sameScene = try #require(patio(brightness: 0.85, shift: 6).cgImage)
         let differentScene = try #require(stripes().cgImage)
@@ -95,7 +117,8 @@ struct PhotoMatcherTests {
         #expect(similar < different)
     }
 
-    @Test func verifierUsesTheBestOfSeveralReferences() async throws {
+    @Test(.enabled(if: visionIsMeaningful, "Vision no produce feature prints significativos en el simulador"))
+    func verifierUsesTheBestOfSeveralReferences() async throws {
         let reference = try #require(PhotoNormalizer.jpegData(from: patio()))
         let unrelated = try #require(PhotoNormalizer.jpegData(from: stripes()))
 
