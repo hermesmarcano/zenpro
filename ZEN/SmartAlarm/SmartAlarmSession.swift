@@ -23,6 +23,7 @@ final class SmartAlarmSession: ObservableObject {
     enum ArmError: Error {
         case noUpcomingFireDate
         case audioUnavailable
+        case alreadyRinging
     }
 
     static let safetyNetMinutes = 2
@@ -49,6 +50,9 @@ final class SmartAlarmSession: ObservableObject {
     // MARK: - Armar / desarmar
 
     func arm(_ alarm: AlarmConfig, now: Date = Date()) async throws {
+        if ringingAlarmID != nil {
+            throw ArmError.alreadyRinging
+        }
         if state != .idle {
             await disarm()
         }

@@ -115,8 +115,11 @@ final class AlarmTonePlayer {
         })
     }
 
+    /// Solo reanuda si el motor realmente se detuvo: reconfigurar la sesión dentro de
+    /// `play` puede provocar otra notificación de configuración, y sin esta guarda un
+    /// reinicio llamaría a otro en bucle.
     private func resume() {
-        guard desiredMode != .stopped else { return }
+        guard desiredMode != .stopped, !(engine.isRunning && player.isPlaying) else { return }
         try? play(desiredMode)
     }
 
