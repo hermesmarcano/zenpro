@@ -163,3 +163,74 @@ Cada milestone se ejecuta bajo el ciclo de planificación/código/revisión defi
 - **M5 — Tareas/MIT + Home**: lista de tareas, dashboard.
 - **M6 — Endurecimiento**: recorrido completo de edge cases de este documento, beta
   en TestFlight, preparación de envío a App Store.
+
+## 7. Ancla por foto y alarma inteligente (añadido después de M2)
+
+### 7.1 Ancla por foto (alternativa al QR)
+
+El usuario registra un punto (ej. "Patio") con 1–3 fotos de referencia tomadas con la
+cámara; para apagar la alarma debe tomar otra foto del mismo lugar.
+
+- **Comparación**: `VNGenerateImageFeaturePrintRequest` (Vision) con la revisión
+  fijada explícitamente, distancia entre feature prints; se acepta si la distancia
+  mínima contra cualquier referencia es menor al umbral. Se guardan las fotos de
+  referencia normalizadas (no los feature prints) y se recalculan al comparar: así un
+  cambio de revisión de Vision en una versión futura de iOS no invalida el ancla.
+- **Solo cámara en vivo**: sin acceso a la fototeca, para que no se pueda "enviar" una
+  foto vieja. La foto de referencia **no se muestra** en la pantalla de la alarma (solo
+  la etiqueta del lugar), para no regalar la respuesta.
+- **Umbral sin calibrar**: no hay dispositivo para medir distancias reales
+  (luz del día vs. madrugada). El umbral es una constante única, `PhotoMatcher`,
+  marcada **[CALIBRAR EN DISPOSITIVO]**. Mitigaciones: el alta exige una foto de
+  verificación (el fallo se ve al configurar, no a las 6am), se recomienda una 2ª
+  referencia con poca luz, y siempre existe el código de respaldo.
+
+| Caso | Resolución |
+|---|---|
+| Cámara denegada / sin hardware | Código de respaldo numérico (igual que el QR) |
+| Foto oscura o movida a la madrugada | Reintento ilimitado; tras 3 fallos se sugiere encender la luz o usar el respaldo |
+| Orientación distinta entre foto de referencia y de verificación | Ambas se normalizan (orientación corregida, máx. 800 px) antes de comparar |
+| Fotografiar una foto/pantalla del lugar | Limitación aceptada (igual que fotografiar un QR impreso) |
+| Revisión de feature print incomparable | La distancia lanza error → se trata como "no coincide"; las referencias se recalculan siempre |
+
+### 7.2 Volumen inteligente (modo armado)
+
+Comportamiento pedido: arranca bajo y vibrando; al **coger** el teléfono baja a la
+mitad y, mientras nos movemos, a ~10 %; si lo **dejamos quieto** sin apagar la alarma
+vuelve al 50 % y sube progresivamente a 100 %.
+
+**Restricción de plataforma**: el sonido de una alarma de AlarmKit lo reproduce el
+sistema y la app **no puede cambiar su volumen**; además la app ni siquiera está en
+ejecución cuando suena. Por eso el volumen dinámico exige que ZEN reproduzca el
+sonido él mismo, lo que solo es posible con la app viva: **modo armado**. Al
+acostarse, el usuario arma la alarma; ZEN mantiene una sesión de audio en segundo
+plano (`UIBackgroundModes: audio`, buffer silencioso) y, a la hora, reproduce el tono
+con la curva de volumen.
+
+- **Red de seguridad**: al armar, la alarma de AlarmKit se mueve a `hora + 2 min`;
+  si ZEN fue terminado por iOS (o el usuario lo cerró deslizando), la alarma del
+  sistema suena igualmente, con 2 min de retraso en el peor caso. Al desarmar o
+  apagar la alarma con QR/foto se reprograma/cancela. Sin armar, la alarma suena a la
+  hora exacta con el sonido normal del sistema.
+- **Máquina de estados** (`SmartVolumeController`, pura y testeable): `initialRamp`
+  (0.15→1.0 en 90 s) → `carried` (mitad del volumen al coger, 0.10 mientras hay
+  movimiento) → `leftBehind` (tras 5 s quieto: 0.5 → 1.0 en 60 s). Cambios de volumen
+  limitados por pendiente para que siempre sean progresivos.
+- **Detección de movimiento** (`MotionClassifier`, pura y testeable): energía RMS en
+  ventana de 1.5 s sobre aceleración sin gravedad + velocidad de rotación (CoreMotion
+  `deviceMotion`, no requiere permiso), con histéresis. **[CALIBRAR EN DISPOSITIVO]**.
+- **Compromiso del usuario**: mientras la cámara de escaneo/foto está abierta, el
+  teléfono se considera "en mano" (volumen bajo) aunque esté quieto; si no, sostenerlo
+  quieto para apuntar al QR dispararía el estado `leftBehind`.
+- **Vibración**: pulsos con `AudioServicesPlaySystemSound` (la intensidad no es
+  controlable): intervalo de 2.0 s a 0.6 s según el volumen; sin vibración mientras se
+  lleva el teléfono.
+
+| Caso | Resolución |
+|---|---|
+| iOS termina la app durante la noche | Alarma de AlarmKit a `hora + 2 min` como red de seguridad |
+| Llamada/Siri/otra app interrumpe el audio | Observador de `AVAudioSession.interruptionNotification`: se reactiva la sesión y se reanuda el tono |
+| Teléfono silenciado / No Molestar | La categoría `.playback` ignora el interruptor de silencio; DND no bloquea audio de app |
+| Auriculares/Bluetooth conectados | La ruta de salida queda fuera de control de la app; se documenta como riesgo (el sonido podría ir a los auriculares). Pendiente de decidir en M6 |
+| Reloj/cambio de zona horaria con la sesión armada | La hora de disparo se recalcula desde `AlarmConfig` al reanudar la app |
+| Se sube/baja el volumen físico del teléfono | El volumen de ZEN es relativo al del sistema; se recomienda dejarlo alto al armar |

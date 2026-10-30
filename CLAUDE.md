@@ -42,6 +42,21 @@ hallazgo de la fase de revisión y bloquea el cierre del ciclo hasta corregirse.
 
 No se pasa a la siguiente feature/milestone con hallazgos de revisión sin resolver.
 
+### Verificación local de la lógica pura
+
+El código que solo depende de Foundation (motor de volumen inteligente, clasificador de
+movimiento, políticas de decisión) **se compila y se testea en segundos** con
+`scripts/logic-tests.sh`, sin esperar al CI de macOS. Requiere un toolchain de Swift
+(≥ 6.0, de swift.org) en el `PATH`; en una sesión nueva sin Xcode se descarga el
+tarball de Linux de `download.swift.org` a un directorio temporal.
+
+Regla de diseño que se desprende de esto: la lógica con reglas de negocio (umbrales,
+máquinas de estado, decisiones de aceptar/rechazar) va en tipos puros sin UIKit /
+SwiftUI / SwiftData / Vision / AVFoundation, y los adaptadores de hardware son capas
+finas encima. Todo archivo nuevo de lógica pura se suma a `LOGIC_SOURCES` /
+`LOGIC_TESTS` del script. Lo que sí necesita frameworks de Apple (Vision, cámara,
+SwiftData, AlarmKit) solo lo valida CI.
+
 ## Decisiones técnicas ya tomadas
 
 - **Stack**: SwiftUI nativo, sin frameworks multiplataforma (requerido por Family
