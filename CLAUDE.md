@@ -72,3 +72,18 @@ SwiftData, AlarmKit) solo lo valida CI.
   para instalar en el iPhone. Requiere Apple Developer Program ($99/año, aún no
   activada) y la entitlement especial `com.apple.developer.family-controls`
   (aprobación manual de Apple — solicitar en cuanto exista la cuenta, ver M0).
+
+## Android (carpeta `android/`)
+
+Versión nativa Kotlin + Compose instalable por APK. Ver `docs/ANDROID.md`. Mismo ciclo de
+trabajo que iOS, pero aquí **sí se compila y se testea en la sesión remota**: hay JDK + SDK de
+Android, así que `./gradlew testDebugUnitTest lintDebug assembleRelease` es parte obligatoria de
+la fase de revisión antes de cada commit (el CI `android.yml` repite lo mismo).
+
+- Sin emulador ni dispositivo: lo que depende de hardware (sensores, cámara, servicio en primer
+  plano, pantalla de bloqueo, fabricantes) queda como "pendiente de validar en dispositivo".
+- La lógica con reglas de negocio va en `core/` y `data/` **sin imports de `android.*`** y con
+  tests JVM en `app/src/test`; los adaptadores de Android son finos.
+- Entorno: exportar `ANDROID_HOME` al SDK (platforms;android-35, build-tools;35.0.0). Si Maven
+  Central responde 429, usar `--max-workers=1 -Dorg.gradle.parallel=false`.
+- `zen-sideload.jks` es una clave pública solo para sideload; nunca para Google Play.
