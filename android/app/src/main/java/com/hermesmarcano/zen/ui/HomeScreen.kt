@@ -48,12 +48,13 @@ import com.hermesmarcano.zen.alarm.AlarmActions
 import com.hermesmarcano.zen.core.RingCountdownFormatter
 import com.hermesmarcano.zen.core.Weekday
 import com.hermesmarcano.zen.data.AlarmEntity
+import com.hermesmarcano.zen.data.WakeRecorder
 import com.hermesmarcano.zen.data.ZenState
 import com.hermesmarcano.zen.zenApp
 import java.io.IOException
 
 @Composable
-fun HomeScreen(onNewAlarm: () -> Unit, onEditAlarm: (String) -> Unit) {
+fun HomeScreen(onNewAlarm: () -> Unit, onEditAlarm: (String) -> Unit, onOpenSettings: () -> Unit = {}) {
     val context = LocalContext.current
     val state by context.zenApp.repository.state.collectAsState()
     var permissionTick by remember { mutableIntStateOf(0) }
@@ -71,12 +72,24 @@ fun HomeScreen(onNewAlarm: () -> Unit, onEditAlarm: (String) -> Unit) {
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
-            Text("ZEN", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("ZEN", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
+                TextButton(onClick = onOpenSettings) { Text("Ajustes") }
+            }
             Text(
                 "Una alarma que solo se apaga yendo al lugar.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 4.dp),
             )
+            val streak = WakeRecorder.currentStreak(state, java.time.LocalDate.now())
+            if (streak > 0) {
+                Text(
+                    "Racha: ${daysText(streak)}",
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+            }
         }
         item { PermissionsCard(permissionTick) }
         if (state.alarms.isEmpty()) {

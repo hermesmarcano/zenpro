@@ -6,6 +6,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.test.core.app.ApplicationProvider
 import com.hermesmarcano.zen.ZenApp
 import com.hermesmarcano.zen.alarm.AlarmRuntime
@@ -19,6 +20,7 @@ import com.hermesmarcano.zen.ui.HomeScreen
 import com.hermesmarcano.zen.ui.PhotoAnchorSetup
 import com.hermesmarcano.zen.ui.QrAnchorSetup
 import com.hermesmarcano.zen.ui.RingingScreen
+import com.hermesmarcano.zen.ui.SolveMethod
 import com.hermesmarcano.zen.ui.ZenTheme
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -125,6 +127,92 @@ class UiSmokeTest {
     @Test fun photoSetupStartsAtTheLabelStep() {
         show { PhotoAnchorSetup(onDone = {}, onCancel = {}) }
         compose.onNodeWithText("¿Qué lugar vas a fotografiar?").assertIsDisplayed()
+    }
+
+    // --- Éxito, ajustes y racha ---
+
+    /**
+     * `performScrollTo` anima el desplazamiento y espera fotogramas: con el reloj parado se cuelga. Solo
+     * es seguro en pantallas sin relojes en bucle (Ajustes no tiene ninguno).
+     */
+    private fun scrollingNeedsFrames() {
+        compose.mainClock.autoAdvance = true
+    }
+
+    @Test fun completionScreenShowsTheStreakAfterVerifyingTheAnchor() {
+        show {
+            com.hermesmarcano.zen.ui.CompletionScreen(
+                com.hermesmarcano.zen.ui.Completion(SolveMethod.ANCHOR, 72, 7, 9, 31, streakGrew = true, newBest = false, milestone = "Una semana entera."),
+                onContinue = {},
+            )
+        }
+        compose.onNodeWithText("Despierto.").assertIsDisplayed()
+        compose.onNodeWithText("Llegaste en 1 min 12 s.").assertIsDisplayed()
+        compose.onNodeWithText("7 días").assertIsDisplayed()
+        compose.onNodeWithText("Una semana entera.").assertIsDisplayed()
+        compose.onNodeWithText("Empezar el día").assertIsDisplayed()
+    }
+
+    @Test fun completionScreenDoesNotRepeatTheMilestoneOnASecondWakeTheSameDay() {
+        show {
+            com.hermesmarcano.zen.ui.CompletionScreen(
+                com.hermesmarcano.zen.ui.Completion(SolveMethod.ANCHOR, 20, 7, 7, 32, streakGrew = false, newBest = false, milestone = "Una semana entera."),
+                onContinue = {},
+            )
+        }
+        compose.onNodeWithText("Una semana entera.").assertDoesNotExist()
+    }
+
+    @Test fun completionScreenForAnEmergencyStopIsHonestAboutIt() {
+        var closed = false
+        show {
+            com.hermesmarcano.zen.ui.CompletionScreen(
+                com.hermesmarcano.zen.ui.Completion(SolveMethod.EMERGENCY, 130, 0, 0, 0, false, false, null),
+                onContinue = { closed = true },
+            )
+        }
+        compose.onNodeWithText("Alarma apagada.").assertIsDisplayed()
+        compose.onNodeWithText("Sin verificar el lugar", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("Empezar el día").performClick()
+        assertTrue(closed)
+    }
+
+    @Test fun homeShowsTheCurrentStreakAndOpensSettings() {
+        app.repository.update { it.copy(stats = com.hermesmarcano.zen.data.WakeStats(3, 5, 12, java.time.LocalDate.now().toEpochDay(), 40)) }
+        var opened = false
+        show { HomeScreen(onNewAlarm = {}, onEditAlarm = {}, onOpenSettings = { opened = true }) }
+        compose.onNodeWithText("Racha: 3 días").assertIsDisplayed()
+        compose.onNodeWithText("Ajustes").performClick()
+        assertTrue(opened)
+    }
+
+    @Test fun homeHidesAStreakThatWasBroken() {
+        app.repository.update { it.copy(stats = com.hermesmarcano.zen.data.WakeStats(3, 5, 12, java.time.LocalDate.now().minusDays(5).toEpochDay(), 40)) }
+        show { HomeScreen(onNewAlarm = {}, onEditAlarm = {}) }
+        compose.onNodeWithText("Racha", substring = true).assertDoesNotExist()
+    }
+
+    @Test fun settingsListsTheSoundsAndPersistsTheChoices() {
+        show { com.hermesmarcano.zen.ui.SettingsScreen(onClose = {}) }
+        scrollingNeedsFrames()
+        compose.onNodeWithText("Sonido de la alarma").assertIsDisplayed()
+        compose.onNodeWithText("Clásico").assertIsDisplayed()
+        compose.onNodeWithText("Campana").performScrollTo().performClick()
+        assertEquals(com.hermesmarcano.zen.data.SoundChoice.Preset("bell"), app.repository.state.value.settings.alarmSound)
+        compose.onNodeWithText("30 %").performScrollTo().performClick()
+        assertEquals(30, app.repository.state.value.settings.startVolumePercent)
+        compose.onNodeWithText("Fanfarria").performScrollTo().performClick()
+        assertEquals(com.hermesmarcano.zen.data.SoundChoice.Preset("fanfare"), app.repository.state.value.settings.completionSound)
+    }
+
+    @Test fun settingsShowsTheDefaultsAndTheStats() {
+        app.repository.update { it.copy(stats = com.hermesmarcano.zen.data.WakeStats(2, 8, 40, java.time.LocalDate.now().toEpochDay(), 50)) }
+        show { com.hermesmarcano.zen.ui.SettingsScreen(onClose = {}) }
+        scrollingNeedsFrames()
+        compose.onNodeWithText("Volumen inicial").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("15 %").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Despertares verificados").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("40").performScrollTo().assertIsDisplayed()
     }
 
     // --- Pantalla de apagado ---

@@ -18,6 +18,7 @@ import android.util.Log
 import androidx.core.app.ServiceCompat
 import com.hermesmarcano.zen.core.SmartVolumeController
 import com.hermesmarcano.zen.core.SmartVolumeProfile
+import com.hermesmarcano.zen.core.withStartVolume
 import com.hermesmarcano.zen.zenApp
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -46,6 +47,10 @@ class AlarmService : Service() {
     private var ringing = false
 
     override fun onBind(intent: Intent?): IBinder? = null
+
+    /** Ganancia lineal que lleva el tono ahora mismo (-1 si no suena). Solo para pruebas. */
+    @androidx.annotation.VisibleForTesting
+    internal val currentToneGain: Float get() = tone?.currentGain ?: -1f
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
@@ -88,7 +93,8 @@ class AlarmService : Service() {
 
     private fun beginRinging(startedAt: Double) {
         ringing = true
-        val profile = SmartVolumeProfile()
+        val settings = zenApp.repository.state.value.settings
+        val profile = SmartVolumeProfile().withStartVolume(settings.startVolume)
 
         wakeLock = getSystemService(PowerManager::class.java)
             .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "zen:ringing")
@@ -98,7 +104,7 @@ class AlarmService : Service() {
         enforceAlarmStreamFloor()
         requestAudioFocus()
 
-        val player = TonePlayer(this).also { it.start(profile.startVolume) }
+        val player = TonePlayer(this, settings.alarmSound).also { it.start(profile.startVolume) }
         tone = player
         val monitor = MotionMonitor(this).also { it.start() }
         motion = monitor

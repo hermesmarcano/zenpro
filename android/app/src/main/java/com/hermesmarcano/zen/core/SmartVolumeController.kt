@@ -26,6 +26,13 @@ data class SmartVolumeProfile(
     val fastestVibrationInterval: Double = 1.2,
 )
 
+/**
+ * Perfil con el volumen inicial elegido por el usuario. Al coger el teléfono la alarma baja "un poco"
+ * por debajo de donde empezó: el nivel en marcha es el 60 % del inicial (nunca menos de 5 %).
+ */
+fun SmartVolumeProfile.withStartVolume(start: Float): SmartVolumeProfile =
+    copy(startVolume = start, carriedVolume = maxOf(0.05f, start * 0.6f))
+
 /** `vibrationInterval` en segundos entre pulsos; `null` = sin vibración. */
 data class SmartVolumeOutput(val volume: Float, val vibrationInterval: Double?)
 

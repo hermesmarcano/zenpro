@@ -1,5 +1,7 @@
 package com.hermesmarcano.zen.data
 
+import com.hermesmarcano.zen.core.AlarmSound
+import com.hermesmarcano.zen.core.CompletionSound
 import com.hermesmarcano.zen.core.Weekday
 import java.io.File
 import java.io.IOException
@@ -94,7 +96,62 @@ internal object StateJson {
                 }
             },
         )
+        root.put("settings", encodeSettings(state.settings))
+        root.put("stats", encodeStats(state.stats))
         return root.toString()
+    }
+
+    private fun encodeSound(choice: SoundChoice): JSONObject = when (choice) {
+        is SoundChoice.Preset -> JSONObject().put("type", "preset").put("id", choice.id)
+        is SoundChoice.Custom -> JSONObject().put("type", "custom").put("file", choice.fileName).put("name", choice.displayName)
+    }
+
+    private fun decodeSound(json: JSONObject?, fallback: SoundChoice, knownIds: Set<String>): SoundChoice {
+        if (json == null) return fallback
+        return when (json.optString("type")) {
+            // Un id que esta versión no conoce (p. ej. de una versión futura) vuelve al valor por defecto.
+            "preset" -> json.optString("id").takeIf { it in knownIds }?.let { SoundChoice.Preset(it) } ?: fallback
+            "custom" -> {
+                val file = json.optString("file")
+                if (file.isBlank()) fallback else SoundChoice.Custom(file, json.optString("name", file))
+            }
+            else -> fallback
+        }
+    }
+
+    private fun encodeSettings(settings: ZenSettings): JSONObject = JSONObject()
+        .put("alarmSound", encodeSound(settings.alarmSound))
+        .put("completionSound", encodeSound(settings.completionSound))
+        .put("startVolumePercent", settings.startVolumePercent)
+
+    private fun decodeSettings(json: JSONObject?): ZenSettings {
+        val defaults = ZenSettings()
+        if (json == null) return defaults
+        return ZenSettings(
+            alarmSound = decodeSound(json.optJSONObject("alarmSound"), defaults.alarmSound, AlarmSound.entries.map { it.id }.toSet()),
+            completionSound = decodeSound(json.optJSONObject("completionSound"), defaults.completionSound, CompletionSound.entries.map { it.id }.toSet()),
+            startVolumePercent = json.optInt("startVolumePercent", defaults.startVolumePercent)
+                .coerceIn(ZenSettings.MIN_START_VOLUME_PERCENT, ZenSettings.MAX_START_VOLUME_PERCENT),
+        )
+    }
+
+    private fun encodeStats(stats: WakeStats): JSONObject = JSONObject()
+        .put("currentStreak", stats.currentStreak)
+        .put("bestStreak", stats.bestStreak)
+        .put("totalWakeups", stats.totalWakeups)
+        .put("lastWakeDay", stats.lastWakeDay ?: JSONObject.NULL)
+        .put("lastSolveSeconds", stats.lastSolveSeconds ?: JSONObject.NULL)
+
+    private fun decodeStats(json: JSONObject?): WakeStats {
+        if (json == null) return WakeStats()
+        val streak = json.optInt("currentStreak", 0).coerceAtLeast(0)
+        return WakeStats(
+            currentStreak = streak,
+            bestStreak = maxOf(streak, json.optInt("bestStreak", 0).coerceAtLeast(0)),
+            totalWakeups = json.optInt("totalWakeups", 0).coerceAtLeast(0),
+            lastWakeDay = if (json.isNull("lastWakeDay")) null else json.optLong("lastWakeDay"),
+            lastSolveSeconds = if (json.isNull("lastSolveSeconds")) null else json.optInt("lastSolveSeconds").coerceAtLeast(0),
+        )
     }
 
     @Throws(JSONException::class)
@@ -126,7 +183,7 @@ internal object StateJson {
                 else -> null // un ancla de una versión futura: se ignora, no se rompe la carga
             }
         }
-        return ZenState(alarms, anchors)
+        return ZenState(alarms, anchors, decodeSettings(root.optJSONObject("settings")), decodeStats(root.optJSONObject("stats")))
     }
 
     private fun JSONArray?.objects(): List<JSONObject> =

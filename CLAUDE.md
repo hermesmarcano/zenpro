@@ -92,4 +92,10 @@ la fase de revisión antes de cada commit (el CI `android.yml` repite lo mismo).
   prueban con `mainClock.autoAdvance = false` y se destruyen las actividades al terminar.
 - No usar `--refresh-dependencies` con el proxy limitado (429): deja la caché de Gradle con "no
   encontrado". Si pasa, borrar `~/.gradle/caches/modules-2/metadata-*` y reintentar.
+- Sonidos personalizables, volumen inicial elegible y racha de despertares: **pedidos explícitamente
+  por el usuario para Android** ("gamificarlo un poco"). Se mantienen sobrios, en línea con el tono
+  del producto (un número de racha y un mensaje; sin mascotas, puntos ni colores de juego). No añadir
+  más gamificación sin que se pida.
+- Todo nivel de volumen se expresa como sonoridad *percibida* (0..1) y pasa por `VolumeCurve` antes de
+  llegar a un reproductor; nunca usar el nivel como ganancia lineal (causaba que "15 %" sonara fuerte).
 - `zen-sideload.jks` es una clave pública solo para sideload; nunca para Google Play.

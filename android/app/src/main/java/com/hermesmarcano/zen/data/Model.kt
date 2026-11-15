@@ -79,9 +79,47 @@ data class PhotoAnchor(
 fun Anchor.matchesBackupCode(entered: String): Boolean =
     MessageDigest.isEqual(entered.toByteArray(Charsets.UTF_8), backupCode.toByteArray(Charsets.UTF_8))
 
+/** Sonido elegido: uno de los incluidos (por id) o un archivo del usuario copiado al almacenamiento de la app. */
+sealed interface SoundChoice {
+    data class Preset(val id: String) : SoundChoice
+
+    /** [fileName] vive en `filesDir/sounds/`; [displayName] es el nombre original, solo para mostrar. */
+    data class Custom(val fileName: String, val displayName: String) : SoundChoice
+}
+
+data class ZenSettings(
+    val alarmSound: SoundChoice = SoundChoice.Preset("classic"),
+    val completionSound: SoundChoice = SoundChoice.Preset("chime"),
+    /** Volumen (percibido) con el que empieza a sonar la alarma, en %. */
+    val startVolumePercent: Int = DEFAULT_START_VOLUME_PERCENT,
+) {
+    /** Nivel inicial en 0..1, acotado: por debajo de 5 % no se oiría y por encima de 50 % deja de ser "empezar bajo". */
+    val startVolume: Float get() = startVolumePercent.coerceIn(MIN_START_VOLUME_PERCENT, MAX_START_VOLUME_PERCENT) / 100f
+
+    companion object {
+        const val DEFAULT_START_VOLUME_PERCENT = 15
+        const val MIN_START_VOLUME_PERCENT = 5
+        const val MAX_START_VOLUME_PERCENT = 50
+        val START_VOLUME_OPTIONS = listOf(10, 15, 20, 30)
+    }
+}
+
+/** Racha de despertares verificados en el ancla. */
+data class WakeStats(
+    val currentStreak: Int = 0,
+    val bestStreak: Int = 0,
+    val totalWakeups: Int = 0,
+    /** Último día (epoch day, zona local) con un despertar verificado. */
+    val lastWakeDay: Long? = null,
+    /** Segundos que tardó en llegar al ancla el último despertar. */
+    val lastSolveSeconds: Int? = null,
+)
+
 data class ZenState(
     val alarms: List<AlarmEntity> = emptyList(),
     val anchors: List<Anchor> = emptyList(),
+    val settings: ZenSettings = ZenSettings(),
+    val stats: WakeStats = WakeStats(),
 ) {
     fun anchor(id: String?): Anchor? = anchors.firstOrNull { it.id == id }
     fun alarm(id: String?): AlarmEntity? = alarms.firstOrNull { it.id == id }

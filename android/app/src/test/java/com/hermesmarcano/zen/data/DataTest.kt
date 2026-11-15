@@ -83,6 +83,46 @@ class StateRepositoryTest {
         assertTrue(repo.state.value.alarms.isEmpty())
     }
 
+    @Test fun settingsAndStatsRoundTrip() {
+        val settings = ZenSettings(SoundChoice.Custom("alarm-1.audio", "Mi canción.mp3"), SoundChoice.Preset("coin"), 20)
+        val stats = WakeStats(4, 9, 31, 20_500L, 75)
+        StateRepository(file).update { it.copy(settings = settings, stats = stats) }
+        val loaded = StateRepository(file).state.value
+        assertEquals(settings, loaded.settings)
+        assertEquals(stats, loaded.stats)
+        assertEquals(0.20f, loaded.settings.startVolume, 1e-6f)
+    }
+
+    @Test fun oldFilesWithoutSettingsGetTheDefaults() {
+        file.writeText("""{"version":1,"alarms":[],"anchors":[]}""")
+        val state = StateRepository(file).state.value
+        assertEquals(ZenSettings(), state.settings)
+        assertEquals(WakeStats(), state.stats)
+        assertEquals(15, state.settings.startVolumePercent)
+    }
+
+    @Test fun invalidSettingsFallBackSafely() {
+        file.writeText("""{"alarms":[],"anchors":[],"settings":{"alarmSound":{"type":"custom"},"completionSound":{"type":"mystery"},"startVolumePercent":9000},"stats":{"currentStreak":-4,"bestStreak":2}}""")
+        val state = StateRepository(file).state.value
+        assertEquals(ZenSettings().alarmSound, state.settings.alarmSound)
+        assertEquals(ZenSettings().completionSound, state.settings.completionSound)
+        assertEquals(ZenSettings.MAX_START_VOLUME_PERCENT, state.settings.startVolumePercent)
+        assertEquals(0, state.stats.currentStreak)
+        assertEquals(2, state.stats.bestStreak)
+    }
+
+    @Test fun unknownPresetIdsFallBackToTheDefaultSound() {
+        file.writeText("""{"alarms":[],"anchors":[],"settings":{"alarmSound":{"type":"preset","id":"dubstep"},"completionSound":{"type":"preset","id":"bowl"}}}""")
+        val settings = StateRepository(file).state.value.settings
+        assertEquals(SoundChoice.Preset("classic"), settings.alarmSound)
+        assertEquals(SoundChoice.Preset("bowl"), settings.completionSound)
+    }
+
+    @Test fun startVolumeIsAlwaysWithinRange() {
+        assertEquals(0.05f, ZenSettings(startVolumePercent = 0).startVolume, 1e-6f)
+        assertEquals(0.5f, ZenSettings(startVolumePercent = 100).startVolume, 1e-6f)
+    }
+
     @Test fun noOpUpdateDoesNotWrite() {
         val repo = StateRepository(file)
         repo.update { it }

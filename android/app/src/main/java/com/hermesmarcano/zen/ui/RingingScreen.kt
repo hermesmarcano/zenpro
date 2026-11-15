@@ -67,7 +67,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @Composable
-fun RingingScreen(onSolved: () -> Unit, onNothingRinging: () -> Unit) {
+fun RingingScreen(onSolved: (SolveMethod) -> Unit, onNothingRinging: () -> Unit) {
     val context = LocalContext.current
     val ring by AlarmRuntime.ring.collectAsState()
     val state by context.zenApp.repository.state.collectAsState()
@@ -145,7 +145,7 @@ fun RingingScreen(onSolved: () -> Unit, onNothingRinging: () -> Unit) {
                     analyzing = false
                     when (outcome) {
                         is PhotoVerifier.Outcome.Compared -> if (outcome.isMatch) {
-                            onSolved()
+                            onSolved(SolveMethod.ANCHOR)
                         } else {
                             photoFailures++
                             message = "No coincide con ${anchor.label}. Colócate en el mismo punto, en vertical."
@@ -195,7 +195,7 @@ fun RingingScreen(onSolved: () -> Unit, onNothingRinging: () -> Unit) {
                     QrAnalyzer { payload ->
                         if (anchor.matches(payload)) {
                             torchOn = false
-                            onSolved()
+                            onSolved(SolveMethod.ANCHOR)
                         } else {
                             message = "Ese no es el código de ${anchor.label}. Busca el que pegaste."
                         }
@@ -238,7 +238,7 @@ fun RingingScreen(onSolved: () -> Unit, onNothingRinging: () -> Unit) {
         if (!camera) {
             if (anchor == null) {
                 if (backupAvailable) {
-                    Button(onClick = onSolved, modifier = Modifier.fillMaxWidth().height(56.dp)) { Text("Apagar alarma") }
+                    Button(onClick = { onSolved(SolveMethod.EMERGENCY) }, modifier = Modifier.fillMaxWidth().height(56.dp)) { Text("Apagar alarma") }
                 } else {
                     Text(
                         "Podrás apagarla en ${BackupCodePolicy.countdownText(backupRemaining)}",
@@ -257,7 +257,7 @@ fun RingingScreen(onSolved: () -> Unit, onNothingRinging: () -> Unit) {
                 )
                 if (backupError) Text("Ese código no coincide.", color = MaterialTheme.colorScheme.error)
                 OutlinedButton(
-                    onClick = { if (anchor.matchesBackupCode(backupInput)) onSolved() else backupError = true },
+                    onClick = { if (anchor.matchesBackupCode(backupInput)) onSolved(SolveMethod.EMERGENCY) else backupError = true },
                     enabled = backupInput.length == BackupCodePolicy.LENGTH,
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text("Apagar con el código") }

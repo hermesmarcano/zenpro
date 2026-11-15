@@ -46,6 +46,7 @@ class MainActivity : ComponentActivity() {
 
 private const val HOME = "home"
 private const val NEW_ALARM = "edit:new"
+private const val SETTINGS = "settings"
 
 @Composable
 private fun ZenRoot() {
@@ -64,7 +65,9 @@ private fun ZenRoot() {
         route == HOME -> HomeScreen(
             onNewAlarm = { route = NEW_ALARM },
             onEditAlarm = { route = "edit:$it" },
+            onOpenSettings = { route = SETTINGS },
         )
+        route == SETTINGS -> SettingsScreen(onClose = { route = HOME })
         route.startsWith("edit:") -> AlarmEditScreen(
             alarmId = route.removePrefix("edit:").takeIf { it != "new" },
             onClose = { route = HOME },

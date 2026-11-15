@@ -9,7 +9,17 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import android.os.SystemClock
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import com.hermesmarcano.zen.alarm.AlarmRuntime
+import com.hermesmarcano.zen.alarm.CompletionPlayer
+import com.hermesmarcano.zen.core.StreakPolicy
+import com.hermesmarcano.zen.data.WakeRecorder
+import com.hermesmarcano.zen.zenApp
+import java.io.IOException
+import java.time.LocalDate
+import kotlinx.coroutines.flow.MutableStateFlow
 import com.hermesmarcano.zen.alarm.AlarmService
 
 /**
@@ -17,6 +27,9 @@ import com.hermesmarcano.zen.alarm.AlarmService
  * apagar ni "atrás": solo verificar el ancla (o el código de respaldo tras la espera) detiene el sonido.
  */
 class RingingActivity : ComponentActivity() {
+    private val completion = MutableStateFlow<Completion?>(null)
+    private var completionPlayer: CompletionPlayer? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
@@ -33,15 +46,30 @@ class RingingActivity : ComponentActivity() {
         setContent {
             ZenTheme {
                 // Tragarse "atrás": salir de la pantalla no debe ser una forma de acallar la alarma.
-                BackHandler(enabled = true) {}
+                BackHandler(enabled = true) {
+                    // Con la alarma ya apagada y la pantalla de éxito abierta, atrás cierra; mientras suena, no.
+                    if (completion.value != null) finish()
+                }
+                val done by completion.collectAsState()
                 Surface(color = MaterialTheme.colorScheme.background) {
-                    RingingScreen(onSolved = ::stopAlarm, onNothingRinging = ::finish)
+                    val result = done
+                    if (result != null) {
+                        CompletionScreen(result, onContinue = ::finish)
+                    } else {
+                        RingingScreen(onSolved = ::stopAlarm, onNothingRinging = ::finish)
+                    }
                 }
             }
         }
     }
 
-    private fun stopAlarm() {
+    override fun onDestroy() {
+        completionPlayer?.stop()
+        super.onDestroy()
+    }
+
+    private fun stopAlarm(method: SolveMethod) {
+        val ring = AlarmRuntime.ring.value
         try {
             startService(AlarmService.stopIntent(this))
         } catch (e: IllegalStateException) {
@@ -49,8 +77,38 @@ class RingingActivity : ComponentActivity() {
             android.util.Log.e("RingingActivity", "No se pudo detener el servicio", e)
             return
         }
-        // Ya verificado: soltar el estado compartido aquí evita que MainActivity, al reanudarse, vuelva a abrir esta pantalla.
+        val solveSeconds = ring?.let { (SystemClock.elapsedRealtime() / 1000.0 - it.startedAtElapsed).toInt() } ?: 0
+        var result = Completion(method, solveSeconds, 0, 0, 0, streakGrew = false, newBest = false, milestone = null)
+
+        if (method == SolveMethod.ANCHOR) {
+            val repository = zenApp.repository
+            val before = repository.state.value.stats
+            try {
+                val updated = repository.update { WakeRecorder.record(it, LocalDate.now(), solveSeconds) }
+                val stats = updated.stats
+                result = Completion(
+                    method = method,
+                    solveSeconds = solveSeconds,
+                    streak = stats.currentStreak,
+                    bestStreak = stats.bestStreak,
+                    totalWakeups = stats.totalWakeups,
+                    streakGrew = stats.lastWakeDay != before.lastWakeDay, // el segundo despertar del día no cuenta dos veces
+                    newBest = stats.bestStreak > before.bestStreak,
+                    milestone = StreakPolicy.milestone(stats.currentStreak),
+                )
+            } catch (e: IOException) {
+                // El despertar ya ocurrió; no se pierde la pantalla por no poder guardar la racha.
+                android.util.Log.e("RingingActivity", "No se pudo guardar la racha", e)
+            }
+            completionPlayer = CompletionPlayer(this).also { it.play(repository.state.value.settings.completionSound) }
+        }
+
+        // La pantalla de éxito se fija ANTES de soltar el estado compartido: si no, RingingScreen vería
+        // "nada sonando" y se cerraría sola. Soltarlo aquí evita además que MainActivity, al
+        // reanudarse, vuelva a abrir esta pantalla.
+        completion.value = result
         AlarmRuntime.end()
-        finish()
+        // Ya no hace falta tener la pantalla encendida por la fuerza (el usuario puede dejarla ahí).
+        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
 }

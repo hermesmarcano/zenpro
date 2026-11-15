@@ -4,7 +4,7 @@ Versión nativa (Kotlin + Jetpack Compose) en `android/`. Misma idea que la de i
 alarma que solo se apaga **yendo al lugar** (código QR pegado o foto de un punto de la
 casa), con volumen inteligente. Se instala con un APK, sin Google Play.
 
-> Estado: compila, pasa lint y 164 tests en JVM (lógica pura + receptores, servicio, pantallas y
+> Estado: compila, pasa lint y 225 tests en JVM (lógica pura + receptores, servicio, pantallas y
 > manifiesto bajo Robolectric), y genera un APK firmado. **No se ha
 > probado en un teléfono real** (no hay emulador en el entorno de desarrollo). Ver
 > [Pendiente de validar en dispositivo](#pendiente-de-validar-en-dispositivo).
@@ -44,6 +44,18 @@ todos los APK se firman con la misma clave (`android/app/zen-sideload.jks`).
   teléfono baja a la mitad y luego a ~10 % mientras se mueve; si se deja quieto sin apagar vuelve
   al 50 % y sube progresivamente a 100 %. Con la cámara abierta cuenta como "en mano". La
   vibración propia se ignora en los sensores para no confundirla con movimiento.
+- **Sonidos** (Ajustes): cinco tonos incluidos (Clásico, Suave, Campana, Pulso, Mañana, sintetizados
+  en el teléfono) o un archivo de audio propio (se copia al almacenamiento privado; máx. 20 MB y
+  10 min). Si el archivo falla al sonar, cae al tono clásico: la alarma nunca queda muda.
+- **Volumen inicial** elegible (10, 15, 20 o 30 %). El nivel es *sonoridad percibida*: se convierte en
+  ganancia con una curva de potencia 1,7 (`VolumeCurve`), porque el oído es logarítmico. Con ganancia
+  lineal el "15 %" eran solo −16 dB y en un tono agudo seguía sonando fuerte; ahora son −28 dB.
+  Al coger el teléfono baja a ~60 % del nivel inicial ("un poco") y, si se deja quieto sin apagar, sube.
+- **Al despertar**: al verificar el ancla suena un sonido de éxito (Campanilla, Fanfarria, Moneda,
+  Cuenco, o un archivo propio, cortado a 10 s) y aparece una pantalla con el tiempo que tardaste y
+  tu **racha**. La racha solo cuenta llegar al ancla (QR o foto); el código de respaldo no suma ni
+  rompe; los días sin alarma programada no la cortan (una alarma de lunes a viernes no se rompe el
+  fin de semana). Es deliberadamente sobria: un número y un mensaje en 3, 7, 14, 30, 60, 100 y 365 días.
 - **Reprogramación**: `BootReceiver` recalcula alarmas tras reinicio, cambio de hora/zona o
   actualización. Una alarma de una sola vez que ya pasó (teléfono apagado) se desactiva en vez
   de sonar al día siguiente.
@@ -86,6 +98,10 @@ privada aparte (nunca en el repositorio) y distribuir como AAB.
 - Aún no incluye el bloqueo de apps ni la lista de tareas (tampoco están terminados en iOS).
 
 ## Pendiente de validar en dispositivo
+
+- **Audio**: el simulador de pruebas no tiene audio nativo, así que `AudioTrack`/`MediaPlayer` solo se
+  prueban en lo que no suena (que no lancen, que el nivel se convierta bien, que los archivos rotos
+  caigan al plan B). Cómo *suena* de verdad (volumen inicial, tonos, archivo propio) hay que oírlo.
 
 Estimaciones sin medir en un teléfono real:
 

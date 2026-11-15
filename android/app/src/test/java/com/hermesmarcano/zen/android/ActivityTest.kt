@@ -10,7 +10,9 @@ import com.hermesmarcano.zen.data.QrAnchor
 import com.hermesmarcano.zen.data.ZenState
 import com.hermesmarcano.zen.ui.MainActivity
 import com.hermesmarcano.zen.ui.RingingActivity
+import com.hermesmarcano.zen.ui.SolveMethod
 import org.junit.After
+import org.junit.Before
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -35,6 +37,10 @@ class ActivityTest {
      * Las pantallas tienen efectos que se reprograman solos: una actividad que se queda viva sigue
      * recomponiendo durante las pruebas siguientes y Compose nunca llega a "reposo". Hay que destruirlas.
      */
+    @Before fun reset() {
+        app.repository.update { ZenState() }
+    }
+
     @After fun tearDown() {
         controllers.forEach { runCatching { it.pause().stop().destroy() } }
         controllers.clear()
@@ -69,14 +75,54 @@ class ActivityTest {
         assertTrue("atrás no debe cerrar la pantalla de apagado", !activity.isFinishing)
     }
 
-    @Test fun ringingActivityStopsTheServiceAndClearsStateWhenSolved() {
+    private fun solve(activity: RingingActivity, method: SolveMethod) {
+        val m = RingingActivity::class.java.getDeclaredMethod("stopAlarm", SolveMethod::class.java).apply { isAccessible = true }
+        m.invoke(activity, method)
+    }
+
+    @Test fun solvingAtTheAnchorStopsTheServiceCountsTheStreakAndShowsTheCompletion() {
         AlarmRuntime.begin(RingState("al", 0.0, null))
         val activity = launch(RingingActivity::class.java)
-        val method = RingingActivity::class.java.getDeclaredMethod("stopAlarm").apply { isAccessible = true }
-        method.invoke(activity)
+        solve(activity, SolveMethod.ANCHOR)
         val stop = shadowOf(app).nextStartedService
-        assertEquals(Intent(app, com.hermesmarcano.zen.alarm.AlarmService::class.java).setAction(com.hermesmarcano.zen.alarm.AlarmService.ACTION_STOP).action, stop.action)
+        assertEquals(com.hermesmarcano.zen.alarm.AlarmService.ACTION_STOP, stop.action)
         assertNull(AlarmRuntime.ring.value)
-        assertTrue(activity.isFinishing)
+        assertTrue("la pantalla de éxito sigue abierta", !activity.isFinishing)
+        val stats = app.repository.state.value.stats
+        assertEquals(1, stats.currentStreak)
+        assertEquals(1, stats.totalWakeups)
+        assertEquals(java.time.LocalDate.now().toEpochDay(), stats.lastWakeDay)
+    }
+
+    @Test fun backClosesTheCompletionScreenButNeverTheRingingOne() {
+        AlarmRuntime.begin(RingState("al", 0.0, null))
+        val activity = launch(RingingActivity::class.java)
+        activity.onBackPressedDispatcher.onBackPressed()
+        assertTrue("sonando: atrás no cierra", !activity.isFinishing)
+        solve(activity, SolveMethod.ANCHOR)
+        assertTrue(activity.window.attributes.flags and android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON == 0)
+        activity.onBackPressedDispatcher.onBackPressed()
+        assertTrue("apagada: atrás cierra la pantalla de éxito", activity.isFinishing)
+    }
+
+    @Test fun anEmergencyStopNeitherCountsNorBreaksTheStreak() {
+        app.repository.update { it.copy(stats = com.hermesmarcano.zen.data.WakeStats(4, 6, 20, java.time.LocalDate.now().minusDays(1).toEpochDay(), 30)) }
+        AlarmRuntime.begin(RingState("al", 0.0, null))
+        val activity = launch(RingingActivity::class.java)
+        solve(activity, SolveMethod.EMERGENCY)
+        assertNull(AlarmRuntime.ring.value)
+        assertEquals(4, app.repository.state.value.stats.currentStreak)
+        assertEquals(20, app.repository.state.value.stats.totalWakeups)
+        assertTrue(!activity.isFinishing)
+    }
+
+    @Test fun twoSolvesTheSameDayDoNotInflateTheStreak() {
+        AlarmRuntime.begin(RingState("al", 0.0, null))
+        solve(launch(RingingActivity::class.java), SolveMethod.ANCHOR)
+        AlarmRuntime.begin(RingState("al2", 0.0, null))
+        solve(launch(RingingActivity::class.java), SolveMethod.ANCHOR)
+        val stats = app.repository.state.value.stats
+        assertEquals(1, stats.currentStreak)
+        assertEquals(2, stats.totalWakeups)
     }
 }
