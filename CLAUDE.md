@@ -86,4 +86,10 @@ la fase de revisión antes de cada commit (el CI `android.yml` repite lo mismo).
   tests JVM en `app/src/test`; los adaptadores de Android son finos.
 - Entorno: exportar `ANDROID_HOME` al SDK (platforms;android-35, build-tools;35.0.0). Si Maven
   Central responde 429, usar `--max-workers=1 -Dorg.gradle.parallel=false`.
+- Las pruebas de capa Android corren en JVM con Robolectric (`app/src/test/.../android`): receptores,
+  servicio, manifiesto y pantallas Compose. Cada clase de test va en su propia JVM (`forkEvery = 1`):
+  los recompositores con relojes en bucle de una clase contaminan a las siguientes. Las pantallas se
+  prueban con `mainClock.autoAdvance = false` y se destruyen las actividades al terminar.
+- No usar `--refresh-dependencies` con el proxy limitado (429): deja la caché de Gradle con "no
+  encontrado". Si pasa, borrar `~/.gradle/caches/modules-2/metadata-*` y reintentar.
 - `zen-sideload.jks` es una clave pública solo para sideload; nunca para Google Play.

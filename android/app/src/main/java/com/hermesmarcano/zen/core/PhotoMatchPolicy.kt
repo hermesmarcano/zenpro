@@ -12,7 +12,7 @@ object PhotoMatchPolicy {
      * con fotos reales de día vs. madrugada. Si se queda corto el usuario cae al código de
      * respaldo; si es laxo, se aceptan lugares parecidos. Es la única constante que ajustar.
      */
-    const val DEFAULT_THRESHOLD = 0.40f
+    const val DEFAULT_THRESHOLD = 0.42f
 
     /** Fallos consecutivos tras los cuales la pantalla sugiere más luz o el código de respaldo. */
     const val FAILURES_BEFORE_HINT = 3

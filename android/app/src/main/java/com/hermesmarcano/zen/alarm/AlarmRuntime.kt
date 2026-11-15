@@ -8,6 +8,11 @@ data class RingState(
     val alarmId: String,
     /** `SystemClock.elapsedRealtime()` en segundos al empezar a sonar: reloj monotónico, inmune a cambios de hora. */
     val startedAtElapsed: Double,
+    /**
+     * Ancla que se exige, fijada al empezar a sonar. Si se leyera del estado en vivo, borrar o
+     * editar la alarma mientras suena dejaría la pantalla "sin ancla" y bastaría esperar 2 minutos.
+     */
+    val anchorId: String?,
 )
 
 object AlarmRuntime {

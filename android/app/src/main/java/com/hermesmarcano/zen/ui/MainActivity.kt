@@ -22,6 +22,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.material3.MaterialTheme
 
 class MainActivity : ComponentActivity() {
+    override fun onResume() {
+        super.onResume()
+        // Volver a ZEN (icono, notificación) con una alarma sonando lleva a la pantalla de apagado,
+        // no a la lista de alarmas.
+        if (AlarmRuntime.ring.value != null) {
+            startActivity(Intent(this, RingingActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()

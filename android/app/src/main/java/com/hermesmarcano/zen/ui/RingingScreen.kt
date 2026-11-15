@@ -44,6 +44,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import com.hermesmarcano.zen.alarm.AlarmRuntime
 import com.hermesmarcano.zen.alarm.Notifications
 import com.hermesmarcano.zen.camera.CameraView
@@ -84,7 +86,7 @@ fun RingingScreen(onSolved: () -> Unit, onNothingRinging: () -> Unit) {
         return
     }
 
-    val anchor = state.anchor(state.alarm(current.alarmId)?.anchorId)
+    val anchor = state.anchor(current.anchorId)
     val scope = rememberCoroutineScope()
 
     var camera by remember { mutableStateOf(false) } // el usuario abrió el escáner / la cámara
@@ -100,6 +102,9 @@ fun RingingScreen(onSolved: () -> Unit, onNothingRinging: () -> Unit) {
         hasCamera = granted
         if (granted) camera = true else message = "Sin permiso de cámara. Usa el código de respaldo cuando se habilite."
     }
+
+    // Al salir de la pantalla (Inicio, bloqueo) CameraX suelta la cámara: no seguir contando como "en mano".
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { camera = false; torchOn = false }
 
     // Con la cámara abierta el teléfono está "en mano" aunque esté quieto (ver SmartVolumeController).
     DisposableEffect(camera) {

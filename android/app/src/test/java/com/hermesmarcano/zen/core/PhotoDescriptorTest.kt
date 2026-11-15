@@ -136,3 +136,55 @@ class PhotoVerifierTest {
         assertTrue(!outcome.isMatch)
     }
 }
+
+/**
+ * Caracteriza qué tanto se puede mover la cámara y seguir aceptando "el mismo lugar" (con la
+ * calibración sintética: mismo lugar ≤ ~0.37, lugares distintos ≥ ~0.47). Si se retoca el
+ * descriptor o el umbral, estos números son el contrato que no debe empeorar.
+ */
+class PhotoRobustnessTest {
+    private val threshold = PhotoMatchPolicy.DEFAULT_THRESHOLD
+
+    private fun worst(name: String, render: (SyntheticScenes.Scene, Long) -> GrayImage): Float {
+        var worst = 0f
+        for (seed in 1L..30L) {
+            val scene = SyntheticScenes.Scene(320, 240, seed)
+            val reference = PhotoDescriptor.from(scene.render())!!
+            val candidate = PhotoDescriptor.from(render(scene, seed)) ?: continue
+            worst = maxOf(worst, reference.distanceTo(candidate))
+        }
+        println("$name: peor distancia $worst (umbral $threshold)")
+        return worst
+    }
+
+    @Test fun toleratesTheCameraNotBeingExactlyWhereItWas() {
+        assertTrue(worst("desplazar 6%") { s, k -> s.render(shiftX = 0.06f, shiftY = 0.03f, noise = 2f, noiseSeed = k) } < threshold)
+        assertTrue(worst("zoom 12%") { s, k -> s.render(zoom = 1.12f, noise = 2f, noiseSeed = k) } < threshold)
+        assertTrue(worst("giro 5°") { s, k -> s.render(rotationDegrees = 5f, noise = 2f, noiseSeed = k) } < threshold)
+    }
+
+    @Test fun toleratesLightingFocusAndNoise() {
+        assertTrue(worst("desenfoque") { s, k -> s.render(blurRadius = 2, noise = 2f, noiseSeed = k) } < threshold)
+        assertTrue(worst("sobreexpuesta") { s, k -> s.render(gamma = 0.5f, noise = 2f, noiseSeed = k) } < threshold)
+        assertTrue(worst("oscura y ruidosa") { s, k -> s.render(brightness = 0.25f, noise = 6f, noiseSeed = k) } < threshold)
+    }
+
+    @Test fun stillRejectsADifferentPlaceWithComfortableMargin() {
+        val scenes = (1L..30L).map { SyntheticScenes.Scene(320, 240, it) }
+        var best = Float.MAX_VALUE
+        for (i in scenes.indices) for (j in scenes.indices) if (i != j) {
+            best = minOf(best, PhotoDescriptor.from(scenes[i].render())!!.distanceTo(PhotoDescriptor.from(scenes[j].render(brightness = 0.6f, noise = 2f))!!))
+        }
+        println("lugares distintos: mejor distancia $best (umbral $threshold)")
+        assertTrue("margen insuficiente: $best", best > threshold + 0.03f)
+    }
+
+    @Test fun aClearlyDifferentFramingIsRejected() {
+        for (seed in 1L..10L) {
+            val scene = SyntheticScenes.Scene(320, 240, seed)
+            val reference = PhotoDescriptor.from(scene.render())!!
+            val far = PhotoDescriptor.from(scene.render(shiftX = 0.3f, shiftY = 0.2f))!!
+            assertTrue(reference.distanceTo(far) > threshold)
+        }
+    }
+}

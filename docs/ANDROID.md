@@ -4,7 +4,8 @@ Versión nativa (Kotlin + Jetpack Compose) en `android/`. Misma idea que la de i
 alarma que solo se apaga **yendo al lugar** (código QR pegado o foto de un punto de la
 casa), con volumen inteligente. Se instala con un APK, sin Google Play.
 
-> Estado: compila, pasa lint y 108 tests de lógica en JVM, y genera un APK firmado. **No se ha
+> Estado: compila, pasa lint y 164 tests en JVM (lógica pura + receptores, servicio, pantallas y
+> manifiesto bajo Robolectric), y genera un APK firmado. **No se ha
 > probado en un teléfono real** (no hay emulador en el entorno de desarrollo). Ver
 > [Pendiente de validar en dispositivo](#pendiente-de-validar-en-dispositivo).
 
@@ -24,7 +25,7 @@ casa), con volumen inteligente. Se instala con un APK, sin Google Play.
 5. Recomendado: *Ajustes → Batería → ZEN → Sin restricciones*. Algunos fabricantes (Xiaomi,
    Huawei, Samsung, OnePlus…) matan apps en segundo plano y eso puede impedir la alarma.
 
-Las actualizaciones se instalan **encima** de la versión anterior sin perder alarmas ni anclas:
+Cada compilación de CI sube el `versionCode` (número de ejecución). Las actualizaciones se instalan **encima** de la versión anterior sin perder alarmas ni anclas:
 todos los APK se firman con la misma clave (`android/app/zen-sideload.jks`).
 
 ## Cómo funciona
@@ -76,6 +77,10 @@ privada aparte (nunca en el repositorio) y distribuir como AAB.
 - Tras un reinicio, las alarmas se reprograman cuando el usuario desbloquea el teléfono por
   primera vez (el estado está en almacenamiento protegido). Una alarma que debía sonar antes
   de ese primer desbloqueo no suena.
+- Mientras suena, ZEN mantiene el volumen de alarmas por encima del 60 % del máximo: las teclas de
+  volumen no pueden silenciarla (al apagarla se restaura el volumen que tenías).
+- Si la alarma suena con otra app en primer plano y el teléfono desbloqueado, Android solo muestra
+  un aviso emergente (no abre la pantalla sola): tócalo, o abre ZEN, que lleva directo a apagarla.
 - Si el usuario revoca el permiso de cámara, solo queda el código de respaldo (tras la espera).
 - Sin acelerómetro el volumen simplemente sube de forma continua.
 - Aún no incluye el bloqueo de apps ni la lista de tareas (tampoco están terminados en iOS).
@@ -84,8 +89,9 @@ privada aparte (nunca en el repositorio) y distribuir como AAB.
 
 Estimaciones sin medir en un teléfono real:
 
-- Umbral de la foto (`PhotoMatchPolicy.DEFAULT_THRESHOLD = 0.40`). Calibrado con variaciones
-  sintéticas (luz, ruido, desplazamiento): mismo lugar ≤ 0.25, lugares distintos ≥ 0.56. Con
+- Umbral de la foto (`PhotoMatchPolicy.DEFAULT_THRESHOLD = 0.42`). Calibrado con variaciones
+  sintéticas (luz, ruido, desplazamiento de hasta 6 %, zoom del 12 %, giro de 5°): mismo lugar
+  ≤ 0.37, lugares distintos ≥ 0.47 (`PhotoRobustnessTest`). Con
   fotos reales de día vs. madrugada puede requerir ajuste; la pantalla de alta muestra la
   distancia medida para poder calibrar.
 - Umbrales de movimiento (`MotionClassifier.Tuning`) y tiempos del volumen.

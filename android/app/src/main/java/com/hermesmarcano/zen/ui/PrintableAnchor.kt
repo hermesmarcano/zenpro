@@ -44,9 +44,12 @@ object PrintableAnchor {
         }
 
         centered(label, 76f, Color.BLACK, 190f, Typeface.DEFAULT_BOLD)
-        val side = 900
-        val qr = qrBitmap(payload)
-        canvas.drawBitmap(Bitmap.createScaledBitmap(qr, side, side, false), (WIDTH - side) / 2f, 260f, null)
+        // Escala entera: todos los módulos con el mismo número de píxeles, sin bordes borrosos al imprimir.
+        val matrix = QrCodec.encode(payload)
+        val scale = (900 / matrix.size).coerceAtLeast(1)
+        val side = matrix.size * scale
+        val qr = Bitmap.createBitmap(matrix.toArgb(scale), side, side, Bitmap.Config.ARGB_8888)
+        canvas.drawBitmap(qr, (WIDTH - side) / 2f, 260f + (900 - side) / 2f, null)
         centered("Código de respaldo", 44f, Color.DKGRAY, 1_270f)
         centered(backupCode, 110f, Color.BLACK, 1_400f, Typeface.MONOSPACE)
         centered("ZEN · solo úsalo si falla la cámara", 34f, Color.GRAY, 1_520f)

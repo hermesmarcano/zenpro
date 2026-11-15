@@ -9,6 +9,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import com.hermesmarcano.zen.alarm.AlarmRuntime
 import com.hermesmarcano.zen.alarm.AlarmService
 
 /**
@@ -41,7 +42,15 @@ class RingingActivity : ComponentActivity() {
     }
 
     private fun stopAlarm() {
-        startService(AlarmService.stopIntent(this))
+        try {
+            startService(AlarmService.stopIntent(this))
+        } catch (e: IllegalStateException) {
+            // Si el sistema rechaza la orden, el sonido sigue: no se da por apagada ni se cierra la pantalla.
+            android.util.Log.e("RingingActivity", "No se pudo detener el servicio", e)
+            return
+        }
+        // Ya verificado: soltar el estado compartido aquí evita que MainActivity, al reanudarse, vuelva a abrir esta pantalla.
+        AlarmRuntime.end()
         finish()
     }
 }

@@ -44,7 +44,11 @@ fun CameraView(
     val context = LocalContext.current
     val owner = LocalLifecycleOwner.current
     val previewView = remember {
-        PreviewView(context).apply { scaleType = PreviewView.ScaleType.FILL_CENTER }
+        PreviewView(context).apply {
+            scaleType = PreviewView.ScaleType.FILL_CENTER
+            // TextureView: respeta las esquinas redondeadas del recorte (SurfaceView las ignora).
+            implementationMode = PreviewView.ImplementationMode.COMPATIBLE
+        }
     }
     var camera by remember { mutableStateOf<Camera?>(null) }
     val onUnavailableState by rememberUpdatedState(onUnavailable)

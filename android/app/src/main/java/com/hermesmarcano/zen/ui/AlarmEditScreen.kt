@@ -44,6 +44,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hermesmarcano.zen.alarm.AlarmActions
+import com.hermesmarcano.zen.alarm.AlarmRuntime
 import com.hermesmarcano.zen.core.Weekday
 import com.hermesmarcano.zen.data.AlarmEntity
 import com.hermesmarcano.zen.data.Anchor
@@ -60,6 +61,7 @@ fun AlarmEditScreen(alarmId: String?, onClose: () -> Unit) {
     val context = LocalContext.current
     val repository = context.zenApp.repository
     val state by repository.state.collectAsState()
+    val ringingNow by AlarmRuntime.ring.collectAsState()
     val existing = remember(alarmId) { alarmId?.let { repository.state.value.alarm(it) } }
 
     var step by remember { mutableStateOf(EditStep.FORM) }
@@ -154,7 +156,7 @@ fun AlarmEditScreen(alarmId: String?, onClose: () -> Unit) {
                         )
                     }
                     val inUse = state.isAnchorInUse(anchor.id)
-                    if (!inUse && anchor.id != anchorId) {
+                    if (!inUse && anchor.id != anchorId && ringingNow == null) {
                         TextButton(onClick = {
                             try {
                                 repository.update { it.copy(anchors = it.anchors.filterNot { a -> a.id == anchor.id }) }
@@ -190,7 +192,7 @@ fun AlarmEditScreen(alarmId: String?, onClose: () -> Unit) {
             shape = RoundedCornerShape(14.dp),
         ) { Text("Guardar y activar", fontSize = 16.sp) }
 
-        if (existing != null) {
+        if (existing != null && ringingNow == null) {
             TextButton(
                 onClick = {
                     try {

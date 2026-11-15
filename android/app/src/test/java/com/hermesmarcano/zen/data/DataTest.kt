@@ -168,6 +168,19 @@ class AlarmPlannerTest {
         assertEquals(millis(3, 6, 30), result.nextFireAt)
     }
 
+    @Test fun restoreKeepsAnAlarmThatJustExpiredSoItRingsNow() {
+        val due = millis(2, 6, 30)
+        val oneShot = alarm(next = due)
+        assertEquals(oneShot, AlarmPlanner.restore(oneShot, due + 30_000, zone))
+        val repeating = alarm(days = setOf(Weekday.MONDAY), next = due)
+        assertEquals(repeating, AlarmPlanner.restore(repeating, due + AlarmPlanner.LATE_GRACE_MS, zone))
+    }
+
+    @Test fun restoreDropsAnAlarmOlderThanTheGrace() {
+        val due = millis(2, 6, 30)
+        assertFalse(AlarmPlanner.restore(alarm(next = due), due + AlarmPlanner.LATE_GRACE_MS + 1, zone).enabled)
+    }
+
     @Test fun restoreLeavesDisabledAlarmsDisabled() {
         assertEquals(alarm(enabled = false, next = null), AlarmPlanner.restore(alarm(enabled = false, next = 99L), 0L, zone))
     }

@@ -12,8 +12,10 @@ android {
         applicationId = "com.hermesmarcano.zen"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        // CI numera cada compilación: Android solo instala encima una versión con versionCode igual o mayor.
+        val build = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
+        versionCode = build
+        versionName = "0.1.$build"
     }
 
     // Clave SOLO para instalar por APK (sideload). Es pública a propósito: sirve para que
@@ -50,7 +52,14 @@ android {
         buildConfig = true
     }
     testOptions {
+        unitTests.all {
+            // Las pruebas de pantallas dejan recompositores con relojes en bucle: cada clase en su JVM
+            // evita que contaminen a las siguientes (Compose no llegaba nunca a "reposo").
+            it.setForkEvery(1)
+        }
         unitTests.isReturnDefaultValues = true
+        // Robolectric necesita los recursos y el manifiesto para levantar actividades y servicios.
+        unitTests.isIncludeAndroidResources = true
     }
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -82,4 +91,12 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     // En los tests de JVM `org.json` de Android es un stub vacío; esta es la implementación real.
     testImplementation("org.json:json:20240303")
+
+    // Humo de la capa Android en JVM (no hay emulador): receptores, servicio, manifiesto y pantallas.
+    testImplementation("org.robolectric:robolectric:4.14.1")
+    testImplementation("androidx.test:core:1.6.1")
+    testImplementation("androidx.test.ext:junit:1.2.1")
+    testImplementation(composeBom)
+    testImplementation("androidx.compose.ui:ui-test-junit4")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
 }

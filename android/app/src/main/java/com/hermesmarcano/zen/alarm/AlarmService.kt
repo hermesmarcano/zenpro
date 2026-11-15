@@ -18,6 +18,8 @@ import android.util.Log
 import androidx.core.app.ServiceCompat
 import com.hermesmarcano.zen.core.SmartVolumeController
 import com.hermesmarcano.zen.core.SmartVolumeProfile
+import com.hermesmarcano.zen.zenApp
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -39,7 +41,8 @@ class AlarmService : Service() {
     private var motion: MotionMonitor? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var audioFocus: AudioFocusRequest? = null
-    private var savedAlarmVolume: Int? = null
+    private var originalAlarmVolume: Int? = null
+    private var alarmVolumeChanged = false
     private var ringing = false
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -55,7 +58,10 @@ class AlarmService : Service() {
         // apagado puede abrirse en cuanto aparece, y si no encuentra alarma sonando se cerraría.
         val startedAt = SystemClock.elapsedRealtime() / 1000.0
         val isNewRing = alarmId != null && !ringing
-        if (isNewRing) AlarmRuntime.begin(RingState(alarmId!!, startedAt))
+        if (isNewRing) {
+            val anchorId = zenApp.repository.state.value.alarm(alarmId)?.anchorId
+            AlarmRuntime.begin(RingState(alarmId!!, startedAt, anchorId))
+        }
 
         // Debe llamarse enseguida tras startForegroundService o el sistema mata el proceso.
         val notification = Notifications.ringing(this)
@@ -88,7 +94,8 @@ class AlarmService : Service() {
             .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "zen:ringing")
             .apply { acquire(WAKE_LOCK_TIMEOUT_MS) }
 
-        raiseAlarmStreamVolume()
+        rememberAlarmStreamVolume()
+        enforceAlarmStreamFloor()
         requestAudioFocus()
 
         val player = TonePlayer(this).also { it.start(profile.startVolume) }
@@ -100,18 +107,33 @@ class AlarmService : Service() {
 
         loop = scope.launch {
             var nextVibration = startedAt
+            var vibrating = false
+            var ticks = 0
             while (isActive) {
-                val now = SystemClock.elapsedRealtime() / 1000.0
-                val out = controller.update(now, monitor.state, AlarmRuntime.userEngaged)
-                player.setVolume(out.volume)
+                // Una excepción suelta en este hilo tumbaría el proceso y con él la alarma: se registra y se sigue.
+                try {
+                    val now = SystemClock.elapsedRealtime() / 1000.0
+                    val out = controller.update(now, monitor.state, AlarmRuntime.userEngaged)
+                    player.setVolume(out.volume)
 
-                val interval = out.vibrationInterval
-                if (interval != null && now >= nextVibration) {
-                    pulse(vibrator, out.volume)
-                    monitor.suppress(PULSE_SUPPRESS_SECONDS)
-                    nextVibration = now + interval
+                    val interval = out.vibrationInterval
+                    if (interval != null && now >= nextVibration) {
+                        pulse(vibrator, out.volume)
+                        vibrating = true
+                        monitor.suppress(PULSE_SUPPRESS_SECONDS)
+                        nextVibration = now + interval
+                    }
+                    if (interval == null && vibrating) {
+                        vibrator?.cancel()
+                        vibrating = false
+                    }
+                    // Las teclas de volumen no deben poder silenciar la alarma sin ir al ancla.
+                    if (++ticks % FLOOR_CHECK_TICKS == 0) enforceAlarmStreamFloor()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.e(TAG, "Fallo en el bucle de la alarma", e)
                 }
-                if (interval == null) vibrator?.cancel()
                 delay(TICK_MS)
             }
         }
@@ -151,27 +173,36 @@ class AlarmService : Service() {
         super.onDestroy()
     }
 
-    /** Si el usuario dejó el volumen de alarmas en 0 (o casi), la alarma sería inútil. */
-    private fun raiseAlarmStreamVolume() {
+    private fun rememberAlarmStreamVolume() {
+        originalAlarmVolume = getSystemService(AudioManager::class.java).getStreamVolume(AudioManager.STREAM_ALARM)
+    }
+
+    /**
+     * Si el volumen de alarmas está en 0 (o casi, por el usuario o por las teclas durante el
+     * sonido), la alarma sería inútil: se sube al mínimo y se vuelve a comprobar cada segundo.
+     */
+    private fun enforceAlarmStreamFloor() {
         try {
             val audio = getSystemService(AudioManager::class.java)
             val max = audio.getStreamMaxVolume(AudioManager.STREAM_ALARM)
-            val current = audio.getStreamVolume(AudioManager.STREAM_ALARM)
             val floor = (max * ALARM_STREAM_FLOOR).toInt().coerceAtLeast(1)
-            if (current < floor) {
-                savedAlarmVolume = current
+            if (audio.getStreamVolume(AudioManager.STREAM_ALARM) < floor) {
                 audio.setStreamVolume(AudioManager.STREAM_ALARM, floor, 0)
+                alarmVolumeChanged = true
             }
         } catch (e: SecurityException) {
             Log.w(TAG, "No se pudo ajustar el volumen de alarmas", e)
         }
     }
 
+    /** Devuelve el volumen que tenía el usuario antes de sonar (solo si ZEN lo tocó). */
     private fun restoreAlarmStreamVolume() {
-        val saved = savedAlarmVolume ?: return
-        savedAlarmVolume = null
+        val original = originalAlarmVolume ?: return
+        originalAlarmVolume = null
+        if (!alarmVolumeChanged) return
+        alarmVolumeChanged = false
         try {
-            getSystemService(AudioManager::class.java).setStreamVolume(AudioManager.STREAM_ALARM, saved, 0)
+            getSystemService(AudioManager::class.java).setStreamVolume(AudioManager.STREAM_ALARM, original, 0)
         } catch (_: SecurityException) {
         }
     }
@@ -213,6 +244,7 @@ class AlarmService : Service() {
         const val ACTION_STOP = "com.hermesmarcano.zen.action.STOP"
         const val EXTRA_ALARM_ID = "alarmId"
         private const val TICK_MS = 100L
+        private const val FLOOR_CHECK_TICKS = 10
         private const val PULSE_MS = 350L
         private const val PULSE_SUPPRESS_SECONDS = 0.6
         private const val ALARM_STREAM_FLOOR = 0.6

@@ -105,9 +105,28 @@ class PhotoDescriptor private constructor(
                     val fraction = position - lower
                     val firstBin = ((lower % BINS) + BINS) % BINS
                     val secondBin = (firstBin + 1) % BINS
-                    val base = ((y / CELL) * cellsX + (x / CELL)) * BINS
-                    histograms[base + firstBin] += magnitude * (1 - fraction)
-                    histograms[base + secondBin] += magnitude * fraction
+
+                    // Voto espacial bilineal entre las 4 celdas más cercanas: un desplazamiento de unos
+                    // píxeles mueve peso entre celdas vecinas en vez de saltar de golpe de una a otra.
+                    val cellX = (x + 0.5f) / CELL - 0.5f
+                    val cellY = (y + 0.5f) / CELL - 0.5f
+                    val x0 = floor(cellX).toInt()
+                    val y0 = floor(cellY).toInt()
+                    val fx = cellX - x0
+                    val fy = cellY - y0
+                    for (dy in 0..1) {
+                        val cy = y0 + dy
+                        if (cy !in 0 until cellsY) continue
+                        val wy = if (dy == 0) 1 - fy else fy
+                        for (dx in 0..1) {
+                            val cx = x0 + dx
+                            if (cx !in 0 until cellsX) continue
+                            val weight = magnitude * wy * (if (dx == 0) 1 - fx else fx)
+                            val base = (cy * cellsX + cx) * BINS
+                            histograms[base + firstBin] += weight * (1 - fraction)
+                            histograms[base + secondBin] += weight * fraction
+                        }
+                    }
                 }
             }
 
