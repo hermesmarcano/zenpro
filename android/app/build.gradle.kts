@@ -12,10 +12,12 @@ android {
         applicationId = "com.hermesmarcano.zen"
         minSdk = 26
         targetSdk = 35
-        // CI numera cada compilación: Android solo instala encima una versión con versionCode igual o mayor.
-        val build = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
+        // Android solo instala encima una versión con versionCode igual o mayor. Se usa la hora de la
+        // compilación (minutos desde 1970): crece sola y es coherente entre compilaciones locales y de CI,
+        // que antes (número de ejecución de CI vs. 1 local) podían quedar "por debajo" y no instalarse.
+        val build = System.getenv("ZEN_VERSION_CODE")?.toIntOrNull() ?: (System.currentTimeMillis() / 60_000L).toInt()
         versionCode = build
-        versionName = "0.1.$build"
+        versionName = "0.2.0"
     }
 
     // Clave SOLO para instalar por APK (sideload). Es pública a propósito: sirve para que

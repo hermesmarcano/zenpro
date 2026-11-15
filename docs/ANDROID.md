@@ -25,7 +25,7 @@ casa), con volumen inteligente. Se instala con un APK, sin Google Play.
 5. Recomendado: *Ajustes → Batería → ZEN → Sin restricciones*. Algunos fabricantes (Xiaomi,
    Huawei, Samsung, OnePlus…) matan apps en segundo plano y eso puede impedir la alarma.
 
-Cada compilación de CI sube el `versionCode` (número de ejecución). Las actualizaciones se instalan **encima** de la versión anterior sin perder alarmas ni anclas:
+Cada compilación sube el `versionCode` (minutos desde 1970, así que siempre crece). Las actualizaciones se instalan **encima** de la versión anterior sin perder alarmas ni anclas:
 todos los APK se firman con la misma clave (`android/app/zen-sideload.jks`).
 
 ## Cómo funciona
