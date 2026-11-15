@@ -32,11 +32,32 @@ jobs:
             -destination 'generic/platform=iOS Simulator' \
             CODE_SIGNING_ALLOWED=NO
 
+      # El runner cambia de imagen y con ella los simuladores instalados ("iPhone 16" dejó de existir):
+      # se elige el iPhone más reciente del runtime de iOS más nuevo que haya disponible.
+      - name: Choose simulator
+        run: |
+          UDID=$(xcrun simctl list devices available -j | python3 -c "
+          import json, sys
+          devices = json.load(sys.stdin)['devices']
+          for runtime in sorted((r for r in devices if 'iOS' in r), reverse=True):
+              phones = [d for d in devices[runtime] if d['name'].startswith('iPhone') and d.get('isAvailable', True)]
+              if phones:
+                  print(phones[-1]['udid'])
+                  break
+          ")
+          if [ -z "$UDID" ]; then
+            echo "No hay simulador de iPhone disponible"
+            xcrun simctl list devices available
+            exit 1
+          fi
+          echo "Simulador elegido: $UDID"
+          echo "SIM_UDID=$UDID" >> "$GITHUB_ENV"
+
       - name: Test
         run: |
           set -o pipefail
           xcodebuild test \
             -project ZEN.xcodeproj \
             -scheme ZEN \
-            -destination 'platform=iOS Simulator,name=iPhone 16,OS=latest' \
+            -destination "id=$SIM_UDID" \
             CODE_SIGNING_ALLOWED=NO
