@@ -33,6 +33,7 @@ import com.hermesmarcano.zen.alarm.AlarmService
 class RingingActivity : ComponentActivity() {
     private val completion = MutableStateFlow<Completion?>(null)
     private var completionPlayer: CompletionPlayer? = null
+    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -74,6 +75,7 @@ class RingingActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        handler.removeCallbacksAndMessages(null)
         completionPlayer?.stop()
         super.onDestroy()
     }
@@ -121,7 +123,11 @@ class RingingActivity : ComponentActivity() {
                 // El despertar ya ocurrió; no se pierde la pantalla por no poder guardar la racha.
                 android.util.Log.e("RingingActivity", "No se pudo guardar la racha", e)
             }
-            completionPlayer = CompletionPlayer(this).also { it.play(repository.state.value.settings.completionSound) }
+            // Unos instantes después: al parar, el servicio devuelve el volumen de alarmas que tenía el usuario, y
+            // si el sonido ya estuviera sonando se notaría el salto de volumen en mitad del "tirín".
+            val player = CompletionPlayer(this).also { completionPlayer = it }
+            val sound = repository.state.value.settings.completionSound
+            handler.postDelayed({ if (!isFinishing && !isDestroyed) player.play(sound) }, COMPLETION_DELAY_MS)
         }
 
         // La pantalla de éxito se fija ANTES de soltar el estado compartido: si no, RingingScreen vería
@@ -131,5 +137,9 @@ class RingingActivity : ComponentActivity() {
         AlarmRuntime.end()
         // Ya no hace falta tener la pantalla encendida por la fuerza (el usuario puede dejarla ahí).
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    }
+
+    private companion object {
+        const val COMPLETION_DELAY_MS = 350L
     }
 }

@@ -12,6 +12,12 @@ import kotlin.math.pow
  * *percibida*: 15 % suena como la séptima parte de lo máximo, no como casi un quinto de la amplitud.
  */
 object VolumeCurve {
+    /**
+     * Nivel (sonoridad percibida) del sonido de "ya estás despierto": 20 % del máximo. Antes sonaba a ganancia
+     * completa y, tras haber estado la alarma al 60 % o más, era un sobresalto justo al despertar.
+     */
+    const val COMPLETION_LEVEL = 0.20f
+
     /** 1 / 0,6: inversa de la ley de potencias de la sonoridad. */
     const val EXPONENT = 1.7f
 

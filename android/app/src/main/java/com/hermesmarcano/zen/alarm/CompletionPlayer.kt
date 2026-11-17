@@ -10,6 +10,7 @@ import android.util.Log
 import com.hermesmarcano.zen.core.CompletionSound
 import com.hermesmarcano.zen.core.CompletionToneSynth
 import com.hermesmarcano.zen.core.SoundImportPolicy
+import com.hermesmarcano.zen.core.VolumeCurve
 import com.hermesmarcano.zen.data.SoundChoice
 import com.hermesmarcano.zen.sound.SoundStorage
 
@@ -19,6 +20,9 @@ class CompletionPlayer(private val context: Context) {
     private var track: AudioTrack? = null
     private var media: MediaPlayer? = null
     private val cutOff = Runnable { stop() }
+
+    /** Ganancia lineal con la que suena (el 20 % percibido de [VolumeCurve.COMPLETION_LEVEL]); visible para pruebas. */
+    val gain: Float = VolumeCurve.gain(VolumeCurve.COMPLETION_LEVEL)
 
     /** `true` si algo empezó a sonar (un fallo es silencioso: es un premio, no puede estorbar). */
     fun play(choice: SoundChoice): Boolean {
@@ -46,7 +50,7 @@ class CompletionPlayer(private val context: Context) {
     }
 
     private fun playSynth(sound: CompletionSound): Boolean = try {
-        track = StaticTrack.create(CompletionToneSynth.samples(sound, SAMPLE_RATE), SAMPLE_RATE, loop = false, gain = 1f)
+        track = StaticTrack.create(CompletionToneSynth.samples(sound, SAMPLE_RATE), SAMPLE_RATE, loop = false, gain = gain)
         true
     } catch (e: Exception) {
         Log.e(TAG, "No se pudo reproducir el sonido de éxito", e)
@@ -61,6 +65,8 @@ class CompletionPlayer(private val context: Context) {
             player.setDataSource(file.path)
             player.setOnCompletionListener { stop() }
             player.prepare()
+            // Un archivo propio suele venir masterizado fuerte: se escala igual que los tonos incluidos.
+            player.setVolume(gain, gain)
             player.start()
             media = player
             true

@@ -52,7 +52,9 @@ todos los APK se firman con la misma clave (`android/app/zen-sideload.jks`).
   lineal el "15 %" eran solo −16 dB y en un tono agudo seguía sonando fuerte; ahora son −28 dB.
   Al coger el teléfono baja a ~60 % del nivel inicial ("un poco") y, si se deja quieto sin apagar, sube.
 - **Al despertar**: al verificar el ancla suena un sonido de éxito (Campanilla, Fanfarria, Moneda,
-  Cuenco, o un archivo propio, cortado a 10 s) y aparece una pantalla con el tiempo que tardaste y
+  Cuenco, o un archivo propio, cortado a 10 s) al **20 % del máximo** (sonoridad percibida, también en
+  "Probar" y para archivos propios; arranca 350 ms después para que el servicio devuelva antes el
+  volumen de alarmas del usuario) y aparece una pantalla con el tiempo que tardaste y
   tu **racha**. La racha solo cuenta llegar al ancla (QR o foto); el código de respaldo no suma ni
   rompe; los días sin alarma programada no la cortan (una alarma de lunes a viernes no se rompe el
   fin de semana). Es deliberadamente sobria: un número y un mensaje en 3, 7, 14, 30, 60, 100 y 365 días.
