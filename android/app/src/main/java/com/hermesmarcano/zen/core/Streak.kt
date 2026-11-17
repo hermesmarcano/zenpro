@@ -13,24 +13,26 @@ object StreakPolicy {
      * Último día previsto de alarma estrictamente anterior a [today]. [scheduledDays] vacío significa
      * "todos los días" (alarmas de una sola vez o sin repetición).
      */
-    fun previousScheduledDay(today: LocalDate, scheduledDays: Set<Weekday>): LocalDate {
-        for (back in 1L..7L) {
+    fun previousScheduledDay(today: LocalDate, scheduledDays: Set<Weekday>, excusedDays: Set<Long> = emptySet()): LocalDate {
+        // 45 días: más que el viaje más largo (30) más una semana de margen.
+        for (back in 1L..45L) {
             val day = today.minusDays(back)
             val weekday = Weekday.fromIso(day.dayOfWeek.value)
-            if (scheduledDays.isEmpty() || weekday in scheduledDays) return day
+            val scheduled = scheduledDays.isEmpty() || weekday in scheduledDays
+            if (scheduled && day.toEpochDay() !in excusedDays) return day
         }
         return today.minusDays(1)
     }
 
     /** Registra un despertar verificado hoy. */
-    fun record(stats: WakeStats, today: LocalDate, scheduledDays: Set<Weekday>, solveSeconds: Int): WakeStats {
+    fun record(stats: WakeStats, today: LocalDate, scheduledDays: Set<Weekday>, solveSeconds: Int, excusedDays: Set<Long> = emptySet()): WakeStats {
         val last = stats.lastWakeDay?.let { LocalDate.ofEpochDay(it) }
         val total = stats.totalWakeups + 1
         val seconds = solveSeconds.coerceAtLeast(0)
         // Segundo despertar del mismo día (dos alarmas): cuenta en el total, no en la racha.
         if (last == today) return stats.copy(totalWakeups = total, lastSolveSeconds = seconds)
 
-        val expected = previousScheduledDay(today, scheduledDays)
+        val expected = previousScheduledDay(today, scheduledDays, excusedDays)
         // Continúa si el último despertar fue el día previsto anterior (o uno posterior, p. ej. una
         // alarma extra en un día libre). Un reloj que retrocede (último día en el futuro) reinicia.
         val continues = last != null && last.isBefore(today) && !last.isBefore(expected)
@@ -45,11 +47,11 @@ object StreakPolicy {
     }
 
     /** Racha a mostrar hoy: se apaga a 0 si ya se saltó un día previsto sin despertar verificado. */
-    fun displayStreak(stats: WakeStats, today: LocalDate, scheduledDays: Set<Weekday>): Int {
+    fun displayStreak(stats: WakeStats, today: LocalDate, scheduledDays: Set<Weekday>, excusedDays: Set<Long> = emptySet()): Int {
         val last = stats.lastWakeDay?.let { LocalDate.ofEpochDay(it) } ?: return 0
         if (last == today) return stats.currentStreak
         if (last.isAfter(today)) return 0
-        return if (!last.isBefore(previousScheduledDay(today, scheduledDays))) stats.currentStreak else 0
+        return if (!last.isBefore(previousScheduledDay(today, scheduledDays, excusedDays))) stats.currentStreak else 0
     }
 
     /** Mensaje sobrio para hitos de racha; `null` el resto de días. */

@@ -18,6 +18,8 @@ import android.util.Log
 import androidx.core.app.ServiceCompat
 import com.hermesmarcano.zen.core.SmartVolumeController
 import com.hermesmarcano.zen.core.SmartVolumeProfile
+import com.hermesmarcano.zen.core.TripPolicy
+import java.time.LocalDate
 import com.hermesmarcano.zen.core.withStartVolume
 import com.hermesmarcano.zen.zenApp
 import kotlinx.coroutines.CancellationException
@@ -64,7 +66,11 @@ class AlarmService : Service() {
         val startedAt = SystemClock.elapsedRealtime() / 1000.0
         val isNewRing = alarmId != null && !ringing
         if (isNewRing) {
-            val anchorId = zenApp.repository.state.value.alarm(alarmId)?.anchorId
+            // El ancla se fija ahora (con el modo viaje aplicado): editar o borrar después no la cambia.
+            val state = zenApp.repository.state.value
+            val anchorId = TripPolicy.effectiveAnchorId(
+                state.alarm(alarmId)?.anchorId, state.trip, LocalDate.now().toEpochDay(),
+            ) { state.anchor(it) != null }
             AlarmRuntime.begin(RingState(alarmId!!, startedAt, anchorId))
         }
 

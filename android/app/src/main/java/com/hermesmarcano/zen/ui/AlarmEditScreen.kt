@@ -53,8 +53,6 @@ import com.hermesmarcano.zen.photo.PhotoStore
 import com.hermesmarcano.zen.zenApp
 import java.io.IOException
 
-private enum class EditStep { FORM, NEW_QR, NEW_PHOTO }
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AlarmEditScreen(alarmId: String?, onClose: () -> Unit) {
@@ -64,7 +62,7 @@ fun AlarmEditScreen(alarmId: String?, onClose: () -> Unit) {
     val ringingNow by AlarmRuntime.ring.collectAsState()
     val existing = remember(alarmId) { alarmId?.let { repository.state.value.alarm(it) } }
 
-    var step by remember { mutableStateOf(EditStep.FORM) }
+    var newAnchor by remember { mutableStateOf<NewAnchorKind?>(null) }
     var days by remember { mutableStateOf(existing?.weekdays ?: emptySet()) }
     var anchorId by remember { mutableStateOf(existing?.anchorId) }
     val timeState = rememberTimePickerState(
@@ -73,26 +71,20 @@ fun AlarmEditScreen(alarmId: String?, onClose: () -> Unit) {
         is24Hour = true,
     )
 
-    fun persistAnchor(anchor: Anchor) {
-        try {
-            repository.update { if (it.anchor(anchor.id) != null) it else it.copy(anchors = it.anchors + anchor) }
-            anchorId = anchor.id
-            step = EditStep.FORM
-        } catch (_: IOException) {
-            Toast.makeText(context, "No se pudo guardar el lugar. Inténtalo de nuevo.", Toast.LENGTH_LONG).show()
-        }
-    }
-
-    when (step) {
-        EditStep.NEW_QR -> {
-            QrAnchorSetup(onDone = ::persistAnchor, onCancel = { step = EditStep.FORM })
-            return
-        }
-        EditStep.NEW_PHOTO -> {
-            PhotoAnchorSetup(onDone = ::persistAnchor, onCancel = { step = EditStep.FORM })
-            return
-        }
-        EditStep.FORM -> Unit
+    newAnchor?.let { kind ->
+        NewAnchorFlow(
+            kind,
+            onCreated = { anchor ->
+                if (repository.addAnchor(anchor)) {
+                    anchorId = anchor.id
+                    newAnchor = null
+                } else {
+                    Toast.makeText(context, "No se pudo guardar el lugar. Inténtalo de nuevo.", Toast.LENGTH_LONG).show()
+                }
+            },
+            onCancel = { newAnchor = null },
+        )
+        return
     }
 
     Column(
@@ -168,10 +160,7 @@ fun AlarmEditScreen(alarmId: String?, onClose: () -> Unit) {
                     }
                 }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { step = EditStep.NEW_QR }, modifier = Modifier.weight(1f)) { Text("Nuevo QR") }
-                OutlinedButton(onClick = { step = EditStep.NEW_PHOTO }, modifier = Modifier.weight(1f)) { Text("Nueva foto") }
-            }
+            NewAnchorButtons { newAnchor = it }
         }
 
         Button(
@@ -181,7 +170,11 @@ fun AlarmEditScreen(alarmId: String?, onClose: () -> Unit) {
                 val alarm = (existing ?: AlarmEntity.new(timeState.hour, timeState.minute, days, chosen))
                     .copy(hour = timeState.hour, minute = timeState.minute, weekdays = days, anchorId = chosen)
                 try {
-                    AlarmActions.save(context, alarm, enabled = true)
+                    val saved = AlarmActions.save(context, alarm, enabled = true)
+                    if (!saved.enabled) {
+                        // Una alarma de una sola vez que cae dentro de la pausa por viaje no suena: que no sea una sorpresa.
+                        Toast.makeText(context, "Guardada, pero está en pausa por el modo viaje y no sonará. Termina la pausa para activarla.", Toast.LENGTH_LONG).show()
+                    }
                     onClose()
                 } catch (_: IOException) {
                     Toast.makeText(context, "No se pudo guardar la alarma.", Toast.LENGTH_LONG).show()
@@ -193,17 +186,23 @@ fun AlarmEditScreen(alarmId: String?, onClose: () -> Unit) {
         ) { Text("Guardar y activar", fontSize = 16.sp) }
 
         if (existing != null && ringingNow == null) {
+            // Borrar es irreversible: un primer toque pide confirmación (sin diálogo, para no tapar la pantalla).
+            var confirmDelete by remember { mutableStateOf(false) }
             TextButton(
                 onClick = {
-                    try {
-                        AlarmActions.delete(context, existing.id)
-                        onClose()
-                    } catch (_: IOException) {
-                        Toast.makeText(context, "No se pudo eliminar la alarma.", Toast.LENGTH_LONG).show()
+                    if (!confirmDelete) {
+                        confirmDelete = true
+                    } else {
+                        try {
+                            AlarmActions.delete(context, existing.id)
+                            onClose()
+                        } catch (_: IOException) {
+                            Toast.makeText(context, "No se pudo eliminar la alarma.", Toast.LENGTH_LONG).show()
+                        }
                     }
                 },
                 modifier = Modifier.fillMaxWidth(),
-            ) { Text("Eliminar alarma", color = MaterialTheme.colorScheme.error) }
+            ) { Text(if (confirmDelete) "Toca otra vez para eliminar" else "Eliminar alarma", color = MaterialTheme.colorScheme.error) }
         }
         TextButton(onClick = onClose, modifier = Modifier.fillMaxWidth()) { Text("Cancelar") }
     }

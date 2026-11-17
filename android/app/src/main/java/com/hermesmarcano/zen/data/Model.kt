@@ -92,6 +92,8 @@ data class ZenSettings(
     val completionSound: SoundChoice = SoundChoice.Preset("chime"),
     /** Volumen (percibido) con el que empieza a sonar la alarma, en %. */
     val startVolumePercent: Int = DEFAULT_START_VOLUME_PERCENT,
+    /** El usuario ya vio la pista de "mantén y arrastra" en la lista de tareas. */
+    val taskHintSeen: Boolean = false,
 ) {
     /** Nivel inicial en 0..1, acotado: por debajo de 5 % no se oiría y por encima de 50 % deja de ser "empezar bajo". */
     val startVolume: Float get() = startVolumePercent.coerceIn(MIN_START_VOLUME_PERCENT, MAX_START_VOLUME_PERCENT) / 100f
@@ -115,15 +117,65 @@ data class WakeStats(
     val lastSolveSeconds: Int? = null,
 )
 
+/** Tarea del día. La prioridad no se guarda: la da la posición en la lista del día (ver TaskBoard). */
+data class TaskItem(
+    val id: String,
+    val title: String,
+    val done: Boolean,
+    /** Día (epoch day, zona local) al que pertenece. */
+    val day: Long,
+    val position: Int,
+    /** Ya se dio el XP de esta tarea: marcar/desmarcar no se puede usar para ganarlo varias veces. */
+    val xpAwarded: Boolean = false,
+)
+
+/** Rango de días [from, to] (epoch day, ambos incluidos). */
+data class DayRange(val from: Long, val to: Long) {
+    fun contains(day: Long) = day in from..to
+}
+
+/**
+ * Modo viaje. Sin [anchorId] es una **pausa**: las alarmas no suenan hasta el final de [untilEpochDay].
+ * Con [anchorId] las alarmas siguen sonando pero se apagan en ese otro ancla (p. ej. un QR de repuesto
+ * impreso, o una foto hecha en el hotel).
+ */
+data class Trip(val untilEpochDay: Long, val anchorId: String?) {
+    val isPause: Boolean get() = anchorId == null
+}
+
+/** Juego sobrio: XP, nivel, racha de tarea prioritaria y logros. Ver Gamification. */
+data class Progress(
+    val xp: Int = 0,
+    /** Racha de días con la tarea prioritaria cumplida (misma política que la de despertares). */
+    val mitStreak: WakeStats = WakeStats(),
+    val tasksCompleted: Int = 0,
+    val mitsCompleted: Int = 0,
+    val perfectDays: Int = 0,
+    val fullDays: Int = 0,
+    val tripsStarted: Int = 0,
+    /** XP de tareas ganado hoy (con tope diario) y el día al que se refiere. */
+    val taskXpDay: Long? = null,
+    val taskXpToday: Int = 0,
+    val completeDayBonusDay: Long? = null,
+    val perfectDayBonusDay: Long? = null,
+    /** id de logro -> día (epoch day) en que se desbloqueó. */
+    val achievements: Map<String, Long> = emptyMap(),
+    /** Días de pausa por viaje: no cuentan como día perdido para las rachas. */
+    val pausedRanges: List<DayRange> = emptyList(),
+)
+
 data class ZenState(
     val alarms: List<AlarmEntity> = emptyList(),
     val anchors: List<Anchor> = emptyList(),
     val settings: ZenSettings = ZenSettings(),
     val stats: WakeStats = WakeStats(),
+    val tasks: List<TaskItem> = emptyList(),
+    val trip: Trip? = null,
+    val progress: Progress = Progress(),
 ) {
     fun anchor(id: String?): Anchor? = anchors.firstOrNull { it.id == id }
     fun alarm(id: String?): AlarmEntity? = alarms.firstOrNull { it.id == id }
-    fun isAnchorInUse(anchorId: String): Boolean = alarms.any { it.anchorId == anchorId }
+    fun isAnchorInUse(anchorId: String): Boolean = alarms.any { it.anchorId == anchorId } || trip?.anchorId == anchorId
 }
 
 object Secrets {

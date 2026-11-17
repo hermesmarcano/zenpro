@@ -1,6 +1,7 @@
 package com.hermesmarcano.zen.data
 
 import com.hermesmarcano.zen.core.StreakPolicy
+import com.hermesmarcano.zen.core.TripPolicy
 import com.hermesmarcano.zen.core.Weekday
 import java.time.LocalDate
 
@@ -13,9 +14,15 @@ object WakeRecorder {
     fun scheduledDays(state: ZenState): Set<Weekday> =
         state.alarms.filter { it.enabled && it.weekdays.isNotEmpty() }.flatMap { it.weekdays }.toSet()
 
+    /** Días de pausa por viaje: no cuentan como día perdido. */
+    fun excusedDays(state: ZenState): Set<Long> = TripPolicy.excusedDays(state.progress.pausedRanges)
+
     fun record(state: ZenState, today: LocalDate, solveSeconds: Int): ZenState =
-        state.copy(stats = StreakPolicy.record(state.stats, today, scheduledDays(state), solveSeconds))
+        state.copy(stats = StreakPolicy.record(state.stats, today, scheduledDays(state), solveSeconds, excusedDays(state)))
 
     fun currentStreak(state: ZenState, today: LocalDate): Int =
-        StreakPolicy.displayStreak(state.stats, today, scheduledDays(state))
+        StreakPolicy.displayStreak(state.stats, today, scheduledDays(state), excusedDays(state))
+
+    fun currentMitStreak(state: ZenState, today: LocalDate): Int =
+        StreakPolicy.displayStreak(state.progress.mitStreak, today, scheduledDays(state), excusedDays(state))
 }

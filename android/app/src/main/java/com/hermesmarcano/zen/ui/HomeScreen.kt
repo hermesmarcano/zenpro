@@ -46,6 +46,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import com.hermesmarcano.zen.alarm.AlarmActions
 import com.hermesmarcano.zen.core.RingCountdownFormatter
+import com.hermesmarcano.zen.core.TripPolicy
 import com.hermesmarcano.zen.core.Weekday
 import com.hermesmarcano.zen.data.AlarmEntity
 import com.hermesmarcano.zen.data.WakeRecorder
@@ -54,7 +55,13 @@ import com.hermesmarcano.zen.zenApp
 import java.io.IOException
 
 @Composable
-fun HomeScreen(onNewAlarm: () -> Unit, onEditAlarm: (String) -> Unit, onOpenSettings: () -> Unit = {}) {
+fun HomeScreen(
+    onNewAlarm: () -> Unit,
+    onEditAlarm: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    onOpenSettings: () -> Unit = {},
+    onOpenTrip: () -> Unit = {},
+) {
     val context = LocalContext.current
     val state by context.zenApp.repository.state.collectAsState()
     var permissionTick by remember { mutableIntStateOf(0) }
@@ -67,13 +74,13 @@ fun HomeScreen(onNewAlarm: () -> Unit, onEditAlarm: (String) -> Unit, onOpenSett
     }
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize().safeDrawingPadding(),
+        modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
             Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text("ZEN", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
+                Text("Alarmas", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
                 TextButton(onClick = onOpenSettings) { Text("Ajustes") }
             }
             Text(
@@ -92,6 +99,7 @@ fun HomeScreen(onNewAlarm: () -> Unit, onEditAlarm: (String) -> Unit, onOpenSett
             }
         }
         item { PermissionsCard(permissionTick) }
+        item { TripCard(state, onOpenTrip) }
         if (state.alarms.isEmpty()) {
             item {
                 Text(
@@ -107,7 +115,10 @@ fun HomeScreen(onNewAlarm: () -> Unit, onEditAlarm: (String) -> Unit, onOpenSett
                     onEditAlarm(alarm.id)
                 } else {
                     try {
-                        AlarmActions.setEnabled(context, alarm.id, enabled)
+                        val result = AlarmActions.setEnabled(context, alarm.id, enabled)
+                        if (enabled && result != null && !result.enabled) {
+                            Toast.makeText(context, "Está en pausa por el modo viaje y no sonará.", Toast.LENGTH_LONG).show()
+                        }
                     } catch (_: IOException) {
                         Toast.makeText(context, "No se pudo guardar el cambio.", Toast.LENGTH_LONG).show()
                     }
@@ -220,5 +231,42 @@ private fun PermissionRow(text: String, action: String, onClick: () -> Unit) {
         Text(text, modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onPrimaryContainer, fontSize = 14.sp)
         Spacer(Modifier.padding(4.dp))
         TextButton(onClick = onClick) { Text(action) }
+    }
+}
+
+
+/** Acceso al modo viaje: qué está activo o qué se puede hacer. */
+@Composable
+private fun TripCard(state: ZenState, onOpen: () -> Unit) {
+    val today = java.time.LocalDate.now().toEpochDay()
+    val trip = state.trip?.takeIf { TripPolicy.isActive(it, today) }
+    val until = trip?.let { java.time.LocalDate.ofEpochDay(it.untilEpochDay).format(java.time.format.DateTimeFormatter.ofPattern("EEE d MMM", java.util.Locale("es"))) }
+    Card(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onOpen),
+        colors = CardDefaults.cardColors(
+            containerColor = if (trip != null) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+        ),
+        shape = RoundedCornerShape(16.dp),
+    ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                when {
+                    trip == null -> "Modo viaje"
+                    trip.isPause -> "Alarmas en pausa hasta el $until"
+                    else -> "Viajando hasta el $until"
+                },
+                fontWeight = FontWeight.SemiBold,
+                color = if (trip != null) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                when {
+                    trip == null -> "Pausa las alarmas o apágalas en otro lugar mientras estás fuera."
+                    trip.isPause -> "No suenan y tu racha no se rompe. Toca para terminar la pausa."
+                    else -> "Se apagan en ${state.anchor(trip.anchorId)?.label ?: "otro lugar"}. Toca para gestionarlo."
+                },
+                fontSize = 14.sp,
+                color = if (trip != null) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }

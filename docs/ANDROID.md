@@ -4,7 +4,7 @@ Versión nativa (Kotlin + Jetpack Compose) en `android/`. Misma idea que la de i
 alarma que solo se apaga **yendo al lugar** (código QR pegado o foto de un punto de la
 casa), con volumen inteligente. Se instala con un APK, sin Google Play.
 
-> Estado: compila, pasa lint y 225 tests en JVM (lógica pura + receptores, servicio, pantallas y
+> Estado: compila, pasa lint y 327 tests en JVM (lógica pura + receptores, servicio, pantallas y
 > manifiesto bajo Robolectric), y genera un APK firmado. **No se ha
 > probado en un teléfono real** (no hay emulador en el entorno de desarrollo). Ver
 > [Pendiente de validar en dispositivo](#pendiente-de-validar-en-dispositivo).
@@ -56,6 +56,13 @@ todos los APK se firman con la misma clave (`android/app/zen-sideload.jks`).
   tu **racha**. La racha solo cuenta llegar al ancla (QR o foto); el código de respaldo no suma ni
   rompe; los días sin alarma programada no la cortan (una alarma de lunes a viernes no se rompe el
   fin de semana). Es deliberadamente sobria: un número y un mensaje en 3, 7, 14, 30, 60, 100 y 365 días.
+- **Tareas del día** (pestaña *Hoy*): hasta 10 por día, 1 prioritaria · 3 medias · 6 bajas según la
+  posición; se reordenan arrastrando, se marcan, se añaden, se editan y se eliminan (con deshacer).
+  Hoy / Mañana, y "traer a hoy" las pendientes de días anteriores.
+- **Modo viaje**: pausar las alarmas unos días (la racha no se rompe) o apagarlas en otro ancla (un QR de
+  repuesto, una foto del hotel). Cuenta desde la próxima alarma.
+- **Progreso**: XP, niveles, racha de despertar y de tarea prioritaria, y 13 logros.
+  Análisis completo de UX y gamificación en [`ANDROID-UX-GAMIFICACION.md`](ANDROID-UX-GAMIFICACION.md).
 - **Reprogramación**: `BootReceiver` recalcula alarmas tras reinicio, cambio de hora/zona o
   actualización. Una alarma de una sola vez que ya pasó (teléfono apagado) se desactiva en vez
   de sonar al día siguiente.

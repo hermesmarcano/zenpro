@@ -9,13 +9,17 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import android.content.Intent
 import android.os.SystemClock
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import com.hermesmarcano.zen.alarm.AlarmRuntime
 import com.hermesmarcano.zen.alarm.CompletionPlayer
 import com.hermesmarcano.zen.core.StreakPolicy
-import com.hermesmarcano.zen.data.WakeRecorder
+import com.hermesmarcano.zen.core.Levels
+import com.hermesmarcano.zen.core.TaskBoard
+import com.hermesmarcano.zen.data.GameEngine
+import com.hermesmarcano.zen.data.GameEvents
 import com.hermesmarcano.zen.zenApp
 import java.io.IOException
 import java.time.LocalDate
@@ -54,13 +58,19 @@ class RingingActivity : ComponentActivity() {
                 Surface(color = MaterialTheme.colorScheme.background) {
                     val result = done
                     if (result != null) {
-                        CompletionScreen(result, onContinue = ::finish)
+                        CompletionScreen(result, onContinue = ::finish, onOpenTasks = ::openTasks)
                     } else {
                         RingingScreen(onSolved = ::stopAlarm, onNothingRinging = ::finish)
                     }
                 }
             }
         }
+    }
+
+    /** Del éxito a la lista de tareas: lo siguiente después de levantarse. */
+    private fun openTasks() {
+        startActivity(Intent(this, MainActivity::class.java).putExtra(MainActivity.EXTRA_ROUTE, MainActivity.ROUTE_TODAY).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP))
+        finish()
     }
 
     override fun onDestroy() {
@@ -83,9 +93,16 @@ class RingingActivity : ComponentActivity() {
         if (method == SolveMethod.ANCHOR) {
             val repository = zenApp.repository
             val before = repository.state.value.stats
+            val today = LocalDate.now()
             try {
-                val updated = repository.update { WakeRecorder.record(it, LocalDate.now(), solveSeconds) }
+                var events = GameEvents()
+                val updated = repository.update { state ->
+                    val outcome = GameEngine.recordWake(state, today, solveSeconds)
+                    events = outcome.events
+                    outcome.state
+                }
                 val stats = updated.stats
+                val todays = TaskBoard.forDay(updated.tasks, today.toEpochDay())
                 result = Completion(
                     method = method,
                     solveSeconds = solveSeconds,
@@ -95,6 +112,10 @@ class RingingActivity : ComponentActivity() {
                     streakGrew = stats.lastWakeDay != before.lastWakeDay, // el segundo despertar del día no cuenta dos veces
                     newBest = stats.bestStreak > before.bestStreak,
                     milestone = StreakPolicy.milestone(stats.currentStreak),
+                    events = events,
+                    level = Levels.progress(updated.progress.xp),
+                    mitTitle = todays.firstOrNull()?.takeIf { !it.done }?.title,
+                    mitDone = todays.firstOrNull()?.done == true,
                 )
             } catch (e: IOException) {
                 // El despertar ya ocurrió; no se pierde la pantalla por no poder guardar la racha.

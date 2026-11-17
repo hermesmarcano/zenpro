@@ -2,6 +2,8 @@ package com.hermesmarcano.zen.data
 
 import com.hermesmarcano.zen.core.AlarmSound
 import com.hermesmarcano.zen.core.CompletionSound
+import com.hermesmarcano.zen.core.Levels
+import com.hermesmarcano.zen.core.TaskBoard
 import com.hermesmarcano.zen.core.Weekday
 import java.io.File
 import java.io.IOException
@@ -98,7 +100,74 @@ internal object StateJson {
         )
         root.put("settings", encodeSettings(state.settings))
         root.put("stats", encodeStats(state.stats))
+        root.put(
+            "tasks",
+            JSONArray().also { array ->
+                state.tasks.forEach { t ->
+                    array.put(
+                        JSONObject().put("id", t.id).put("title", t.title).put("done", t.done)
+                            .put("day", t.day).put("position", t.position).put("xp", t.xpAwarded),
+                    )
+                }
+            },
+        )
+        root.put("trip", state.trip?.let { JSONObject().put("until", it.untilEpochDay).put("anchorId", it.anchorId ?: JSONObject.NULL) } ?: JSONObject.NULL)
+        root.put("progress", encodeProgress(state.progress))
         return root.toString()
+    }
+
+    private fun encodeProgress(p: Progress): JSONObject = JSONObject()
+        .put("xp", p.xp)
+        .put("mitStreak", encodeStats(p.mitStreak))
+        .put("tasksCompleted", p.tasksCompleted)
+        .put("mitsCompleted", p.mitsCompleted)
+        .put("perfectDays", p.perfectDays)
+        .put("fullDays", p.fullDays)
+        .put("tripsStarted", p.tripsStarted)
+        .put("taskXpDay", p.taskXpDay ?: JSONObject.NULL)
+        .put("taskXpToday", p.taskXpToday)
+        .put("completeDayBonusDay", p.completeDayBonusDay ?: JSONObject.NULL)
+        .put("perfectDayBonusDay", p.perfectDayBonusDay ?: JSONObject.NULL)
+        .put("achievements", JSONObject().also { o -> p.achievements.forEach { (k, v) -> o.put(k, v) } })
+        .put("pausedRanges", JSONArray().also { a -> p.pausedRanges.forEach { a.put(JSONObject().put("from", it.from).put("to", it.to)) } })
+
+    private fun decodeProgress(json: JSONObject?): Progress {
+        if (json == null) return Progress()
+        fun longOrNull(key: String): Long? = if (json.isNull(key) || !json.has(key)) null else json.optLong(key)
+        val achievements = json.optJSONObject("achievements")?.let { o ->
+            o.keys().asSequence().associateWith { o.optLong(it) }
+        } ?: emptyMap()
+        val ranges = json.optJSONArray("pausedRanges").objects().mapNotNull { r ->
+            val from = r.optLong("from"); val to = r.optLong("to")
+            if (to >= from) DayRange(from, to) else null
+        }
+        return Progress(
+            xp = json.optInt("xp").coerceIn(0, Levels.MAX_XP),
+            mitStreak = decodeStats(json.optJSONObject("mitStreak")),
+            tasksCompleted = json.optInt("tasksCompleted").coerceAtLeast(0),
+            mitsCompleted = json.optInt("mitsCompleted").coerceAtLeast(0),
+            perfectDays = json.optInt("perfectDays").coerceAtLeast(0),
+            fullDays = json.optInt("fullDays").coerceAtLeast(0),
+            tripsStarted = json.optInt("tripsStarted").coerceAtLeast(0),
+            taskXpDay = longOrNull("taskXpDay"),
+            taskXpToday = json.optInt("taskXpToday").coerceAtLeast(0),
+            completeDayBonusDay = longOrNull("completeDayBonusDay"),
+            perfectDayBonusDay = longOrNull("perfectDayBonusDay"),
+            achievements = achievements,
+            pausedRanges = ranges,
+        )
+    }
+
+    /** Tareas válidas, sin duplicados, con posiciones 0..n-1 por día y como mucho 10 por día. */
+    private fun decodeTasks(array: JSONArray?): List<TaskItem> {
+        val raw = array.objects().mapNotNull { o ->
+            val id = o.optString("id"); val title = o.optString("title")
+            if (id.isBlank() || title.isBlank()) null
+            else TaskItem(id, title.take(TaskBoard.TITLE_MAX), o.optBoolean("done"), o.optLong("day"), o.optInt("position"), o.optBoolean("xp"))
+        }.distinctBy { it.id }
+        return raw.groupBy { it.day }.flatMap { (_, list) ->
+            list.sortedBy { it.position }.take(TaskBoard.MAX_PER_DAY).mapIndexed { i, t -> t.copy(position = i) }
+        }
     }
 
     private fun encodeSound(choice: SoundChoice): JSONObject = when (choice) {
@@ -123,6 +192,7 @@ internal object StateJson {
         .put("alarmSound", encodeSound(settings.alarmSound))
         .put("completionSound", encodeSound(settings.completionSound))
         .put("startVolumePercent", settings.startVolumePercent)
+        .put("taskHintSeen", settings.taskHintSeen)
 
     private fun decodeSettings(json: JSONObject?): ZenSettings {
         val defaults = ZenSettings()
@@ -132,6 +202,7 @@ internal object StateJson {
             completionSound = decodeSound(json.optJSONObject("completionSound"), defaults.completionSound, CompletionSound.entries.map { it.id }.toSet()),
             startVolumePercent = json.optInt("startVolumePercent", defaults.startVolumePercent)
                 .coerceIn(ZenSettings.MIN_START_VOLUME_PERCENT, ZenSettings.MAX_START_VOLUME_PERCENT),
+            taskHintSeen = json.optBoolean("taskHintSeen", false),
         )
     }
 
@@ -183,7 +254,17 @@ internal object StateJson {
                 else -> null // un ancla de una versión futura: se ignora, no se rompe la carga
             }
         }
-        return ZenState(alarms, anchors, decodeSettings(root.optJSONObject("settings")), decodeStats(root.optJSONObject("stats")))
+        val trip = root.optJSONObject("trip")?.let { t ->
+            Trip(t.optLong("until"), if (t.isNull("anchorId")) null else t.optString("anchorId").ifBlank { null })
+        }
+        return ZenState(
+            alarms, anchors,
+            decodeSettings(root.optJSONObject("settings")),
+            decodeStats(root.optJSONObject("stats")),
+            decodeTasks(root.optJSONArray("tasks")),
+            trip,
+            decodeProgress(root.optJSONObject("progress")),
+        )
     }
 
     private fun JSONArray?.objects(): List<JSONObject> =

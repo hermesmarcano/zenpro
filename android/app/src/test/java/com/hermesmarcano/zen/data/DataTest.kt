@@ -123,6 +123,53 @@ class StateRepositoryTest {
         assertEquals(0.5f, ZenSettings(startVolumePercent = 100).startVolume, 1e-6f)
     }
 
+    @Test fun tasksTripAndProgressRoundTrip() {
+        val tasks = listOf(
+            TaskItem("a", "Escribir informe", done = true, day = 100, position = 0, xpAwarded = true),
+            TaskItem("b", "Llamar", done = false, day = 100, position = 1),
+            TaskItem("c", "Mañana", done = false, day = 101, position = 0),
+        )
+        val progress = Progress(
+            xp = 230, mitStreak = WakeStats(2, 3, 5, 100, 0), tasksCompleted = 12, mitsCompleted = 4, perfectDays = 1, fullDays = 0,
+            tripsStarted = 2, taskXpDay = 100, taskXpToday = 45, completeDayBonusDay = 100, perfectDayBonusDay = null,
+            achievements = mapOf("first_wake" to 90L, "streak_3" to 95L), pausedRanges = listOf(DayRange(80, 84)),
+        )
+        StateRepository(file).update { it.copy(tasks = tasks, trip = Trip(105, "hotel"), progress = progress) }
+        val loaded = StateRepository(file).state.value
+        assertEquals(tasks, loaded.tasks)
+        assertEquals(Trip(105, "hotel"), loaded.trip)
+        assertEquals(progress, loaded.progress)
+        StateRepository(file).update { it.copy(trip = Trip(7, null)) }
+        assertEquals(Trip(7, null), StateRepository(file).state.value.trip)
+        StateRepository(file).update { it.copy(trip = null) }
+        assertNull(StateRepository(file).state.value.trip)
+    }
+
+    @Test fun brokenTasksAreRepairedOnLoad() {
+        val many = (0 until 14).joinToString(",") { """{"id":"t$it","title":"x$it","day":5,"position":${100 - it}}""" }
+        file.writeText("""{"alarms":[],"anchors":[],"tasks":[$many,{"id":"t0","title":"dup","day":5},{"id":"","title":"sin id","day":5},{"id":"z","title":"  ","day":5}]}""")
+        val tasks = StateRepository(file).state.value.tasks
+        assertEquals(10, tasks.size)
+        assertEquals((0 until 10).toList(), tasks.map { it.position }.sorted())
+        assertEquals(tasks.size, tasks.map { it.id }.toSet().size)
+        assertTrue(tasks.none { it.title == "dup" || it.title.isBlank() })
+    }
+
+    @Test fun absurdXpInAFileIsClampedOnLoad() {
+        file.writeText("""{"alarms":[],"anchors":[],"progress":{"xp":2147483647}}""")
+        val xp = StateRepository(file).state.value.progress.xp
+        assertEquals(com.hermesmarcano.zen.core.Levels.MAX_XP, xp)
+        assertEquals(com.hermesmarcano.zen.core.Levels.MAX_LEVEL, com.hermesmarcano.zen.core.Levels.levelFor(xp))
+    }
+
+    @Test fun oldFilesWithoutTheNewSectionsStillLoad() {
+        file.writeText("""{"alarms":[],"anchors":[],"settings":{},"stats":{}}""")
+        val state = StateRepository(file).state.value
+        assertEquals(emptyList<TaskItem>(), state.tasks)
+        assertNull(state.trip)
+        assertEquals(Progress(), state.progress)
+    }
+
     @Test fun noOpUpdateDoesNotWrite() {
         val repo = StateRepository(file)
         repo.update { it }

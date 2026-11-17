@@ -10,7 +10,9 @@ import com.hermesmarcano.zen.alarm.AlarmRuntime
 import com.hermesmarcano.zen.alarm.AlarmScheduler
 import com.hermesmarcano.zen.alarm.AlarmService
 import com.hermesmarcano.zen.alarm.BootReceiver
+import com.hermesmarcano.zen.core.Achievement
 import com.hermesmarcano.zen.core.Weekday
+import com.hermesmarcano.zen.data.Trip
 import com.hermesmarcano.zen.data.AlarmEntity
 import com.hermesmarcano.zen.data.QrAnchor
 import com.hermesmarcano.zen.data.ZenState
@@ -223,5 +225,112 @@ class AlarmFlowTest {
         controller.create().startCommand(0, 1)
         assertNull(AlarmRuntime.ring.value)
         assertTrue(shadowOf(controller.get()).isStoppedBySelf)
+    }
+}
+
+@RunWith(RobolectricTestRunner::class)
+@Config(application = ZenApp::class, sdk = [34])
+class TripFlowTest {
+    private val app: ZenApp = ApplicationProvider.getApplicationContext()
+    private val repository get() = app.repository
+    private val alarmManager get() = app.getSystemService(AlarmManager::class.java)
+    private val home = QrAnchor("home", "Espejo", "s1", "111111")
+    private val hotel = QrAnchor("hotel", "Hotel", "s2", "222222")
+    private val today get() = java.time.LocalDate.now()
+
+    @Before fun reset() {
+        AlarmRuntime.end()
+        repository.update { ZenState(emptyList(), listOf(home, hotel)) }
+    }
+
+    @After fun tearDown() = AlarmRuntime.end()
+
+    private fun repeatingAlarm(id: String = "al") = AlarmEntity.new(6, 30, Weekday.entries.toSet(), home.id).copy(id = id)
+
+    @Test fun pausingMovesRepeatingAlarmsPastThePauseAndSchedulesThem() {
+        AlarmActions.save(app, repeatingAlarm(), enabled = true)
+        val before = repository.state.value.alarm("al")!!.nextFireAt!!
+        AlarmActions.startTrip(app, com.hermesmarcano.zen.core.TripPolicy.start(today.toEpochDay(), 3, null))
+        val after = repository.state.value.alarm("al")!!
+        val firstDayAfter = today.plusDays(3).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
+        assertTrue("el aviso debe quedar después de la pausa", after.nextFireAt!! >= firstDayAfter)
+        assertTrue(after.nextFireAt!! > before)
+        assertEquals(after.nextFireAt, shadowOf(alarmManager).nextScheduledAlarm!!.triggerAtTime)
+        assertTrue(Achievement.TRAVELER.id in repository.state.value.progress.achievements)
+    }
+
+    @Test fun aOneShotInsideThePauseIsDisabledAndCancelled() {
+        AlarmActions.save(app, AlarmEntity.new(6, 30, emptySet(), home.id), enabled = true)
+        AlarmActions.startTrip(app, com.hermesmarcano.zen.core.TripPolicy.start(today.toEpochDay(), 3, null))
+        assertFalse(repository.state.value.alarms.single().enabled)
+        assertNull(shadowOf(alarmManager).nextScheduledAlarm)
+    }
+
+    @Test fun savingAOneShotDuringAPauseReportsThatItWillNotRing() {
+        AlarmActions.startTrip(app, com.hermesmarcano.zen.core.TripPolicy.start(today.toEpochDay(), 5, null))
+        val saved = AlarmActions.save(app, AlarmEntity.new(6, 30, emptySet(), home.id), enabled = true)
+        assertFalse("la interfaz usa esto para avisar", saved.enabled)
+        val toggled = AlarmActions.setEnabled(app, saved.id, true)
+        assertFalse(toggled!!.enabled)
+        assertNull(AlarmActions.setEnabled(app, "no-existe", true))
+    }
+
+    @Test fun endingThePauseEarlyBringsTheAlarmBack() {
+        AlarmActions.save(app, repeatingAlarm(), enabled = true)
+        val original = repository.state.value.alarm("al")!!.nextFireAt!!
+        AlarmActions.startTrip(app, com.hermesmarcano.zen.core.TripPolicy.start(today.toEpochDay(), 7, null))
+        AlarmActions.endTrip(app)
+        assertNull(repository.state.value.trip)
+        assertEquals(original, repository.state.value.alarm("al")!!.nextFireAt)
+        assertEquals(original, shadowOf(alarmManager).nextScheduledAlarm!!.triggerAtTime)
+    }
+
+    @Test fun savingAnAlarmDuringAPauseSchedulesItAfterThePause() {
+        AlarmActions.startTrip(app, com.hermesmarcano.zen.core.TripPolicy.start(today.toEpochDay(), 5, null))
+        AlarmActions.save(app, repeatingAlarm(), enabled = true)
+        val firstDayAfter = today.plusDays(5).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
+        assertTrue(repository.state.value.alarm("al")!!.nextFireAt!! >= firstDayAfter)
+    }
+
+    @Test fun aFiringDuringThePauseIsIgnoredAndTheAlarmRescheduled() {
+        repository.update { it.copy(alarms = listOf(repeatingAlarm().copy(enabled = true, nextFireAt = System.currentTimeMillis()))) }
+        repository.update { it.copy(trip = Trip(today.toEpochDay() + 2, null)) }
+        AlarmReceiver().onReceive(app, Intent(AlarmScheduler.ACTION_FIRE).putExtra(AlarmScheduler.EXTRA_ALARM_ID, "al"))
+        assertNull("en pausa no debe sonar", shadowOf(app).nextStartedService)
+        val next = repository.state.value.alarm("al")!!.nextFireAt!!
+        assertTrue(next >= today.plusDays(3).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli())
+    }
+
+    @Test fun theTravelAnchorIsRequiredWhileTheTripLasts() {
+        repository.update { it.copy(alarms = listOf(repeatingAlarm()), trip = Trip(today.toEpochDay() + 2, hotel.id)) }
+        val controller = Robolectric.buildService(AlarmService::class.java, AlarmService.ringIntent(app, "al"))
+        controller.create().startCommand(0, 1)
+        assertEquals("hotel", AlarmRuntime.ring.value?.anchorId)
+        controller.withIntent(AlarmService.stopIntent(app)).startCommand(0, 2)
+        AlarmRuntime.end()
+    }
+
+    @Test fun afterTheTripTheHomeAnchorIsBack() {
+        repository.update { it.copy(alarms = listOf(repeatingAlarm()), trip = Trip(today.toEpochDay() - 1, hotel.id)) }
+        val controller = Robolectric.buildService(AlarmService::class.java, AlarmService.ringIntent(app, "al"))
+        controller.create().startCommand(0, 1)
+        assertEquals("home", AlarmRuntime.ring.value?.anchorId)
+        controller.withIntent(AlarmService.stopIntent(app)).startCommand(0, 2)
+    }
+
+    @Test fun ifTheTravelAnchorWasDeletedTheAlarmStillHasAnAnchor() {
+        repository.update { it.copy(alarms = listOf(repeatingAlarm()), trip = Trip(today.toEpochDay() + 2, "borrada")) }
+        val controller = Robolectric.buildService(AlarmService::class.java, AlarmService.ringIntent(app, "al"))
+        controller.create().startCommand(0, 1)
+        assertEquals("home", AlarmRuntime.ring.value?.anchorId)
+        controller.withIntent(AlarmService.stopIntent(app)).startCommand(0, 2)
+    }
+
+    @Test fun anExpiredTripIsClearedWhenTheAppStarts() {
+        repository.update { it.copy(trip = Trip(today.toEpochDay() - 3, null)) }
+        // Lo que hace ZenApp.onCreate: la limpieza usa las mismas reglas.
+        val today = today.toEpochDay()
+        repository.update { it.copy(trip = it.trip?.takeIf { t -> com.hermesmarcano.zen.core.TripPolicy.isActive(t, today) }) }
+        assertNull(repository.state.value.trip)
     }
 }

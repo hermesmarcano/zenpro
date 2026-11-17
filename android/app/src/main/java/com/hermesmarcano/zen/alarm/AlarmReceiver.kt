@@ -17,8 +17,11 @@ class AlarmReceiver : BroadcastReceiver() {
         val now = System.currentTimeMillis()
 
         // Un PendingIntent de una versión anterior de la alarma (editada o borrada) no debe sonar.
-        if (!AlarmPlanner.shouldRing(repository.state.value.alarm(alarmId), now)) {
+        val pause = AlarmActions.pauseUntilDay(repository.state.value)
+        if (!AlarmPlanner.shouldRing(repository.state.value.alarm(alarmId), now, pause)) {
             Log.i(TAG, "Disparo descartado para $alarmId")
+            // Llegó en plena pausa por viaje (se programó antes de pausar): recolocar las alarmas tras la pausa.
+            if (pause != null) AlarmActions.restoreAll(context)
             return
         }
 
@@ -32,7 +35,7 @@ class AlarmReceiver : BroadcastReceiver() {
 
         try {
             val updated = repository.update { state ->
-                state.copy(alarms = state.alarms.map { if (it.id == alarmId) AlarmPlanner.afterFiring(it, now) else it })
+                state.copy(alarms = state.alarms.map { if (it.id == alarmId) AlarmPlanner.afterFiring(it, now, pauseUntilDay = pause) else it })
             }
             updated.alarm(alarmId)?.let { AlarmScheduler.apply(context, it) }
         } catch (e: IOException) {

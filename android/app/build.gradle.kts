@@ -17,7 +17,7 @@ android {
         // que antes (número de ejecución de CI vs. 1 local) podían quedar "por debajo" y no instalarse.
         val build = System.getenv("ZEN_VERSION_CODE")?.toIntOrNull() ?: (System.currentTimeMillis() / 60_000L).toInt()
         versionCode = build
-        versionName = "0.2.0"
+        versionName = "0.3.0"
     }
 
     // Clave SOLO para instalar por APK (sideload). Es pública a propósito: sirve para que
@@ -73,6 +73,8 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.9.3")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+    // Arrastrar y soltar en LazyColumn (reordenar tareas): desplazamiento automático, accesibilidad y animaciones.
+    implementation("sh.calvin.reorderable:reorderable:2.4.3")
 
     val composeBom = platform("androidx.compose:compose-bom:2024.12.01")
     implementation(composeBom)

@@ -116,6 +116,20 @@ class UiSmokeTest {
         assertTrue(saved.enabled)
     }
 
+    @Test fun deletingAnAlarmNeedsASecondTap() {
+        app.repository.update { it.copy(alarms = listOf(AlarmEntity("del", 7, 0, emptySet(), false, qr.id, null))) }
+        var closed = false
+        show { AlarmEditScreen(alarmId = "del", onClose = { closed = true }) }
+        scrollingNeedsFrames()
+        compose.onNodeWithText("Eliminar alarma").performScrollTo().performClick()
+        compose.waitForIdle()
+        assertEquals("el primer toque no borra", 1, app.repository.state.value.alarms.size)
+        compose.onNodeWithText("Toca otra vez para eliminar").performScrollTo().performClick()
+        compose.waitForIdle()
+        assertTrue(app.repository.state.value.alarms.isEmpty())
+        assertTrue(closed)
+    }
+
     // --- Altas de ancla ---
 
     @Test fun qrSetupWalksThroughLabelAndShowsTheCode() {

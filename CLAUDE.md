@@ -92,10 +92,16 @@ la fase de revisión antes de cada commit (el CI `android.yml` repite lo mismo).
   prueban con `mainClock.autoAdvance = false` y se destruyen las actividades al terminar.
 - No usar `--refresh-dependencies` con el proxy limitado (429): deja la caché de Gradle con "no
   encontrado". Si pasa, borrar `~/.gradle/caches/modules-2/metadata-*` y reintentar.
-- Sonidos personalizables, volumen inicial elegible y racha de despertares: **pedidos explícitamente
-  por el usuario para Android** ("gamificarlo un poco"). Se mantienen sobrios, en línea con el tono
-  del producto (un número de racha y un mensaje; sin mascotas, puntos ni colores de juego). No añadir
-  más gamificación sin que se pida.
+- Sonidos personalizables, volumen inicial elegible, rachas, **XP, niveles y logros**: **pedidos
+  explícitamente por el usuario para Android** ("gamificarlo", "que sea divertido de usar"). Se mantienen
+  sobrios y sin patrones oscuros: sin mascotas ni colores de juego, sin clasificaciones, **sin castigos ni
+  avisos de "vas a perder tu racha"**, XP con tope diario, y reglas justas (días sin alarma y pausas de
+  viaje no rompen la racha; el código de respaldo ni suma ni rompe). Ver `docs/ANDROID-UX-GAMIFICACION.md`.
+  No añadir más gamificación sin que se pida.
+- Tareas: hasta 10 por día, la prioridad la da la **posición** (1 prioritaria · 3 medias · 6 bajas) y se
+  reordena arrastrando (`sh.calvin.reorderable`). Solo se completan las de hoy.
+- Modo viaje: pausa con fecha o ancla alternativo; el primer día cuenta desde la **próxima alarma**
+  (`TripPolicy.startDay`), no desde hoy.
 - Todo nivel de volumen se expresa como sonoridad *percibida* (0..1) y pasa por `VolumeCurve` antes de
   llegar a un reproductor; nunca usar el nivel como ganancia lineal (causaba que "15 %" sonara fuerte).
 - `zen-sideload.jks` es una clave pública solo para sideload; nunca para Google Play.
