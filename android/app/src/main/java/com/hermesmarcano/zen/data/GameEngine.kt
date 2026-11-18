@@ -18,10 +18,27 @@ data class GameEvents(
     val mitDone: Boolean = false,
     val perfectDay: Boolean = false,
     val completeDay: Boolean = false,
+    val workoutDone: Boolean = false,
+    /** Ejercicios en los que se batió un récord personal en el entrenamiento. */
+    val records: Int = 0,
+    val weeklyGoalMet: Boolean = false,
 ) {
     val leveledUp: Boolean get() = levelAfter > levelBefore
-    val isEmpty: Boolean get() = xpGained == 0 && unlocked.isEmpty() && !mitDone && !perfectDay && !completeDay
+    val isEmpty: Boolean
+        get() = xpGained == 0 && unlocked.isEmpty() && !mitDone && !perfectDay && !completeDay && !workoutDone && records == 0 && !weeklyGoalMet
 }
+
+/** Lo que el juego necesita saber de un entrenamiento terminado. */
+data class WorkoutOutcome(
+    /** Cumple el mínimo (ver WorkoutOps.qualifies); si no, se guarda pero no da XP ni cuenta para el objetivo. */
+    val qualifies: Boolean,
+    val volumeKg: Double,
+    /** Ejercicios con récord personal. */
+    val records: Int,
+    /** Días de entreno de esta semana **incluido** este entrenamiento. */
+    val daysThisWeek: Int,
+    val weeklyGoal: Int,
+)
 
 /**
  * Transiciones del juego sobre el estado: marcar tareas, registrar un despertar, empezar/cancelar un
@@ -120,6 +137,42 @@ object GameEngine {
             next = next.copy(progress = progress)
         }
         return finish(state, next, day, xp, solveSeconds, flags)
+    }
+
+    /**
+     * Entrenamiento terminado: XP (el primero de cada día), bonus por récords (con tope), objetivo semanal
+     * (una vez por semana) y logros. Un entrenamiento que no cumple el mínimo no cambia nada.
+     */
+    fun recordWorkout(state: ZenState, outcome: WorkoutOutcome, today: LocalDate): Result {
+        if (!outcome.qualifies) return Result(state)
+        val day = today.toEpochDay()
+        val week = com.hermesmarcano.zen.core.WorkoutWeeks.weekIndex(day)
+        var progress = state.progress
+        var xp = 0
+        var flags = GameEvents(workoutDone = true, records = outcome.records)
+        progress = progress.copy(
+            workouts = progress.workouts + 1,
+            workoutVolumeKg = (progress.workoutVolumeKg + outcome.volumeKg.toLong()).coerceAtMost(1_000_000_000L),
+            personalRecords = progress.personalRecords + outcome.records,
+        )
+        if (progress.workoutXpDay != day) {
+            xp += XpRules.WORKOUT + minOf(outcome.records, XpRules.WORKOUT_RECORD_MAX) * XpRules.WORKOUT_RECORD
+            progress = progress.copy(workoutXpDay = day)
+        }
+        if (outcome.daysThisWeek >= outcome.weeklyGoal && progress.goalBonusWeek != week) {
+            xp += XpRules.WEEKLY_GOAL
+            val streak = if (progress.lastGoalWeek == week - 1) progress.goalWeekStreak + 1 else 1
+            progress = progress.copy(
+                goalBonusWeek = week,
+                goalWeeks = progress.goalWeeks + 1,
+                goalWeekStreak = streak,
+                bestGoalWeekStreak = maxOf(progress.bestGoalWeekStreak, streak),
+                lastGoalWeek = week,
+            )
+            flags = flags.copy(weeklyGoalMet = true)
+        }
+        progress = progress.copy(xp = Levels.addXp(progress.xp, xp))
+        return finish(state, state.copy(progress = progress), day, xp, flags = flags)
     }
 
     /** Empieza un viaje (sustituye al anterior si lo hubiera). */

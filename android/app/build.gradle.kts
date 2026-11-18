@@ -17,7 +17,7 @@ android {
         // que antes (número de ejecución de CI vs. 1 local) podían quedar "por debajo" y no instalarse.
         val build = System.getenv("ZEN_VERSION_CODE")?.toIntOrNull() ?: (System.currentTimeMillis() / 60_000L).toInt()
         versionCode = build
-        versionName = "0.3.1"
+        versionName = "0.4.0"
     }
 
     // Clave SOLO para instalar por APK (sideload). Es pública a propósito: sirve para que

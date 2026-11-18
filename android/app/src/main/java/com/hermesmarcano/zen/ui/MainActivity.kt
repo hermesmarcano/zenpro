@@ -70,16 +70,18 @@ class MainActivity : ComponentActivity() {
     companion object {
         const val EXTRA_ROUTE = "route"
         const val ROUTE_TODAY = "today"
+        const val ROUTE_WORKOUT = "workout"
     }
 }
 
 private const val TODAY = "today"
 private const val ALARMS = "alarms"
 private const val PROGRESS = "progress"
+private const val WORKOUT = MainActivity.ROUTE_WORKOUT
 private const val SETTINGS = "settings"
 private const val TRIP = "trip"
 private const val NEW_ALARM = "edit:new"
-private val TABS = listOf(TODAY, ALARMS, PROGRESS)
+private val TABS = listOf(TODAY, WORKOUT, ALARMS, PROGRESS)
 
 @Composable
 private fun ZenRoot(requestedRoute: String?, onRouteConsumed: () -> Unit) {
@@ -124,6 +126,7 @@ private fun ZenRoot(requestedRoute: String?, onRouteConsumed: () -> Unit) {
             if (onTab) {
                 NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
                     NavigationBarItem(selected = route == TODAY, onClick = { route = TODAY }, icon = { Icon(Icons.Filled.Home, null) }, label = { Text("Hoy") })
+                    NavigationBarItem(selected = route == WORKOUT, onClick = { route = WORKOUT }, icon = { Icon(DumbbellIcon, null) }, label = { Text("Entreno") })
                     NavigationBarItem(selected = route == ALARMS, onClick = { route = ALARMS }, icon = { Icon(Icons.Filled.Notifications, null) }, label = { Text("Alarmas") })
                     NavigationBarItem(selected = route == PROGRESS, onClick = { route = PROGRESS }, icon = { Icon(Icons.Filled.Star, null) }, label = { Text("Progreso") })
                 }
@@ -133,7 +136,8 @@ private fun ZenRoot(requestedRoute: String?, onRouteConsumed: () -> Unit) {
         // El hueco de la barra inferior y de las barras del sistema ya viene en `inner`; el teclado se suma aparte.
         val content = Modifier.padding(inner).consumeWindowInsets(inner).imePadding()
         when {
-            route == TODAY -> TodayScreen(content, onOpenSettings = { route = SETTINGS }, announce = announce, onOpenAlarms = { route = ALARMS })
+            route == TODAY -> TodayScreen(content, onOpenSettings = { route = SETTINGS }, announce = announce, onOpenAlarms = { route = ALARMS }, onOpenWorkout = { route = WORKOUT })
+            route == WORKOUT -> WorkoutScreen(content, announce = announce)
             route == ALARMS -> HomeScreen(
                 onNewAlarm = { route = NEW_ALARM },
                 onEditAlarm = { route = "edit:$it" },

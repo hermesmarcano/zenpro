@@ -63,7 +63,7 @@ fun ProgressScreen(modifier: Modifier, onOpenSettings: () -> Unit) {
                     Text("Nivel ${level.level}", fontSize = 40.sp, fontWeight = FontWeight.Light)
                     LevelBar(level, Modifier.fillMaxWidth())
                     Text(
-                        "Ganas XP al despertar en el lugar, cumplir tu prioritaria y completar tareas. Hay un tope diario para las tareas.",
+                        "Ganas XP al despertar en el lugar, cumplir tu prioritaria, completar tareas y entrenar. Hay un tope diario para las tareas y solo el primer entreno de cada día da XP.",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 13.sp,
                     )
@@ -80,6 +80,11 @@ fun ProgressScreen(modifier: Modifier, onOpenSettings: () -> Unit) {
                     Stat("Despertares verificados", state.stats.totalWakeups.toString())
                     Stat("Tareas completadas", progress.tasksCompleted.toString())
                     Stat("Días redondos", progress.perfectDays.toString())
+                    Stat("Entrenamientos", progress.workouts.toString())
+                    Stat("Volumen levantado", com.hermesmarcano.zen.core.WorkoutNumbers.formatVolume(progress.workoutVolumeKg.toDouble()))
+                    Stat("Marcas personales", progress.personalRecords.toString())
+                    Stat("Semanas cumpliendo el objetivo", progress.goalWeeks.toString())
+                    Stat("Mejor racha semanal", if (progress.bestGoalWeekStreak == 1) "1 semana" else "${progress.bestGoalWeekStreak} semanas")
                 }
             }
         }

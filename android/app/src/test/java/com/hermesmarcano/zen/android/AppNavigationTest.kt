@@ -69,6 +69,23 @@ class AppNavigationTest {
         rule.onNodeWithText("¿Qué es lo más importante hoy?").assertExists()
     }
 
+    @Test fun theWorkoutTabIsReachableAndTodayLinksToTheNextRoutine() {
+        app.workouts.update { com.hermesmarcano.zen.data.WorkoutData() }
+        rule.mainClock.advanceTimeBy(400)
+        rule.onNodeWithText("Te toca entrenar").assertDoesNotExist() // sin rutinas, Hoy no insiste
+        tap("Entreno")
+        rule.onNodeWithText("Usar plantilla Empuje · Tirón · Piernas").assertExists()
+        rule.onNodeWithText("Esta semana").assertExists()
+        back()
+        rule.onNodeWithText("¿Qué es lo más importante hoy?").assertExists()
+
+        app.workouts.update { it.copy(routines = listOf(com.hermesmarcano.zen.data.Routine("r1", "Día 1 · Empuje", 0, emptyList()))) }
+        rule.mainClock.advanceTimeBy(400)
+        rule.onNodeWithText("Te toca entrenar").assertExists()
+        tap("Ver")
+        rule.onNodeWithText("Te toca").assertExists()
+    }
+
     @Test fun settingsReturnToTheTabTheyWereOpenedFrom() {
         tap("Alarmas")
         tap("Ajustes")

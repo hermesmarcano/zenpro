@@ -162,6 +162,18 @@ data class Progress(
     val achievements: Map<String, Long> = emptyMap(),
     /** Días de pausa por viaje: no cuentan como día perdido para las rachas. */
     val pausedRanges: List<DayRange> = emptyList(),
+    /** Entrenamientos que cuentan (ver WorkoutOps.qualifies), kg movidos en total y récords personales batidos. */
+    val workouts: Int = 0,
+    val workoutVolumeKg: Long = 0,
+    val personalRecords: Int = 0,
+    /** Día del último entrenamiento que dio XP: solo el primero de cada día lo da. */
+    val workoutXpDay: Long? = null,
+    /** Semana (ver WorkoutWeeks) cuyo bonus de objetivo semanal ya se dio. */
+    val goalBonusWeek: Long? = null,
+    val goalWeeks: Int = 0,
+    val goalWeekStreak: Int = 0,
+    val bestGoalWeekStreak: Int = 0,
+    val lastGoalWeek: Long? = null,
 )
 
 data class ZenState(

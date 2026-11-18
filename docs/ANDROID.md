@@ -63,7 +63,23 @@ todos los APK se firman con la misma clave (`android/app/zen-sideload.jks`).
   Hoy / Mañana, y "traer a hoy" las pendientes de días anteriores.
 - **Modo viaje**: pausar las alarmas unos días (la racha no se rompe) o apagarlas en otro ancla (un QR de
   repuesto, una foto del hotel). Cuenta desde la próxima alarma.
-- **Progreso**: XP, niveles, racha de despertar y de tarea prioritaria, y 13 logros.
+- **Entreno** (pestaña *Entreno*, inspirada en Hevy): rutinas por día **sin atar al día de la semana** (la app
+  propone la siguiente en la rotación; se salta un día y sigue tocando la misma). Cada serie anota **kg × repeticiones**
+  (o solo repeticiones, o tiempo), con lo de la última vez ya puesto; calentamientos, RPE 6–10, notas, **supersets**,
+  ejercicios propios y una biblioteca de ~55 ejercicios. **Cronómetro de descanso** entre series (por ejercicio, ±15 s, saltar):
+  se guarda la hora de fin, así que sobrevive a que Android cierre la app; avisa con una alarma exacta
+  (`USE_EXACT_ALARM`, `RestTimer`/`RestReceiver`), una notificación con cuenta atrás y un sonido corto a nivel bajo
+  (`VolumeCurve.REST_LEVEL`) por el canal de notificaciones (respeta el modo silencio). Además: calculadora de discos
+  (barra de 20/15/10 kg), récords personales (peso máximo, 1RM estimada Epley, mejor serie), gráficas por ejercicio,
+  resumen semanal y objetivo de días por semana. El historial vive en `workouts.json` (la sesión en curso, en
+  `active_workout.json`, para no reescribir años de historial en cada serie) y se **exporta/importa como CSV** (la app no
+  usa la copia de seguridad de Android). Unidades: kg.
+  - **Juego**: un entrenamiento que cuenta (≥ 3 series de trabajo y ≥ 5 min) da +40 XP el primero de cada día,
+    +5 XP por ejercicio con récord (máx. 3), +50 XP al cumplir el objetivo semanal (una vez por semana) y 7 logros
+    (primer entreno, 10, 50, primera marca, semana cumplida, 4 semanas seguidas, 10 toneladas). Sin castigos ni
+    avisos de pérdida: la racha semanal solo se muestra, no se amenaza.
+  - Una sesión que se olvidó cerrar solo cuenta hasta 15 min después de la última serie.
+- **Progreso**: XP, niveles, racha de despertar y de tarea prioritaria, estadísticas de entreno y 20 logros.
   Análisis completo de UX y gamificación en [`ANDROID-UX-GAMIFICACION.md`](ANDROID-UX-GAMIFICACION.md).
 - **Reprogramación**: `BootReceiver` recalcula alarmas tras reinicio, cambio de hora/zona o
   actualización. Una alarma de una sola vez que ya pasó (teléfono apagado) se desactiva en vez
@@ -104,13 +120,15 @@ privada aparte (nunca en el repositorio) y distribuir como AAB.
   un aviso emergente (no abre la pantalla sola): tócalo, o abre ZEN, que lleva directo a apagarla.
 - Si el usuario revoca el permiso de cámara, solo queda el código de respaldo (tras la espera).
 - Sin acelerómetro el volumen simplemente sube de forma continua.
-- Aún no incluye el bloqueo de apps ni la lista de tareas (tampoco están terminados en iOS).
+- Aún no incluye el bloqueo de apps (tampoco está terminado en iOS).
+- `USE_EXACT_ALARM` es válido para el APK por sideload; si algún día se publica en Google Play habrá que justificarlo (la app es de alarmas) o pedir el permiso especial.
 
 ## Pendiente de validar en dispositivo
 
 - **Audio**: el simulador de pruebas no tiene audio nativo, así que `AudioTrack`/`MediaPlayer` solo se
   prueban en lo que no suena (que no lancen, que el nivel se convierta bien, que los archivos rotos
-  caigan al plan B). Cómo *suena* de verdad (volumen inicial, tonos, archivo propio) hay que oírlo.
+  caigan al plan B). Cómo *suena* de verdad (volumen inicial, tonos, archivo propio, aviso de fin de descanso) hay que oírlo.
+- **Entreno**: el aviso de descanso con la pantalla apagada y el ahorro de batería de cada fabricante, y escribir con el teclado numérico (coma o punto decimal).
 
 Estimaciones sin medir en un teléfono real:
 

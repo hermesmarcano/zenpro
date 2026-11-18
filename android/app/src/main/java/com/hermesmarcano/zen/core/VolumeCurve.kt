@@ -18,6 +18,9 @@ object VolumeCurve {
      */
     const val COMPLETION_LEVEL = 0.20f
 
+    /** Nivel del aviso de "fin del descanso" entre series: audible con música de fondo pero nada estridente. */
+    const val REST_LEVEL = 0.30f
+
     /** 1 / 0,6: inversa de la ley de potencias de la sonoridad. */
     const val EXPONENT = 1.7f
 
