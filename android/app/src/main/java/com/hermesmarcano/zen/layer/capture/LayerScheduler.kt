@@ -61,7 +61,7 @@ object LayerScheduler {
 class LayerJobService : JobService() {
     override fun onStartJob(params: JobParameters): Boolean {
         val runtime = layer
-        runtime.runIo {
+        runtime.runJob {
             try {
                 if (params.jobId == LayerScheduler.JOB_MAINTENANCE) LayerMaintenance.run(applicationContext) else runtime.sync.run()
             } finally {

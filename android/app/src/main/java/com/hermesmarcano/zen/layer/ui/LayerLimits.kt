@@ -240,7 +240,7 @@ private fun RuleEditor(env: LayerEnv, existing: LimitRule?, appLoader: (Context)
         if (picking) {
             AppPickerPanel(
                 appLoader = appLoader, context = env.context,
-                exclude = { it == env.context.packageName },
+                exclude = { it == env.context.packageName || it == com.hermesmarcano.zen.layer.capture.LayerStatus.homePackage(env.context) },
                 onPick = { pkg = it.pkg; label = it.label; picking = false },
                 onClose = { picking = false },
             )

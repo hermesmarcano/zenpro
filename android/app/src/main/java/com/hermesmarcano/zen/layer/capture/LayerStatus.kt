@@ -20,6 +20,14 @@ object LayerStatus {
     fun isXiaomi(): Boolean =
         Build.MANUFACTURER.equals("xiaomi", ignoreCase = true) || Build.BRAND.lowercase() in setOf("xiaomi", "redmi", "poco")
 
+    /** El paquete del lanzador por defecto (pantalla de inicio): nunca debe limitarse ni bloquearse. */
+    fun homePackage(context: Context): String? = try {
+        context.packageManager.resolveActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), PackageManager.MATCH_DEFAULT_ONLY)
+            ?.activityInfo?.packageName
+    } catch (_: Exception) {
+        null
+    }
+
     fun isListenerEnabled(context: Context): Boolean = NotificationManagerCompat.getEnabledListenerPackages(context).contains(context.packageName)
 
     fun hasMicrophone(context: Context): Boolean =

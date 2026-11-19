@@ -211,7 +211,12 @@ internal fun BrainSection(env: LayerEnv, state: LayerState) {
                         capture = it.capture.copy(ambientAudio = false),
                     )
                 }
-                env.say("Cerebro quitado. Lo que estaba en cola se conserva por si configuras otro.")
+                // Lo encolado era para ESE cerebro: no debe acabar en otro servidor que se configure después.
+                env.runtime.runIo {
+                    env.runtime.outbox.clear()
+                    env.runtime.audioFiles.deleteAll()
+                }
+                env.say("Cerebro quitado y su cola de envío borrada.")
             },
         ) { Text("Quitar cerebro") }
     }

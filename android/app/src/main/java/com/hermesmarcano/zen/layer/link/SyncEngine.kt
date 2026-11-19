@@ -86,8 +86,12 @@ class SyncEngine(
                     }
                     is ApiResult.Rejected -> {
                         reached = true
-                        error = r.message
-                        if (batch.size == 1) dropFiles(outbox.markFailed(batch, clock(), random(), rejected = true)) else isolate(batch)
+                        if (batch.size == 1) {
+                            error = r.message
+                            dropFiles(outbox.markFailed(batch, clock(), random(), rejected = true))
+                        } else {
+                            isolate(batch)
+                        }
                     }
                 }
             }
@@ -107,7 +111,10 @@ class SyncEngine(
                         outbox.markFailed(listOf(item), clock(), random(), rejected = false)
                         return
                     }
-                    is ApiResult.Rejected -> dropFiles(outbox.markFailed(listOf(item), clock(), random(), rejected = true))
+                    is ApiResult.Rejected -> {
+                        error = r.message
+                        dropFiles(outbox.markFailed(listOf(item), clock(), random(), rejected = true))
+                    }
                 }
             }
         }

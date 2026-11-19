@@ -51,6 +51,7 @@ class LayerAccessibilityService : AccessibilityService() {
     private var lastEnforceAtMs = 0L
     private var tickScheduled = false
     private var receiverRegistered = false
+    @Volatile private var homePackage: String? = null
 
     /**
      * Costura para pruebas: Robolectric no tiene conexión real con el sistema de accesibilidad y no puede entregar una
@@ -84,6 +85,7 @@ class LayerAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         LayerLive.accessibilityConnected = true
+        homePackage = LayerStatus.homePackage(this)
         val runtime = runtimeOrNull() ?: return
         runtime.runIo {
             runtime.ensureDeviceId()
@@ -102,14 +104,14 @@ class LayerAccessibilityService : AccessibilityService() {
         val now = System.currentTimeMillis()
         when (event.eventType) {
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
-                val kind = WindowClassifier.classify(pkg, isInputMethodWindow(event))
+                val kind = if (pkg == homePackage) WindowKind.HOME else WindowClassifier.classify(pkg, isInputMethodWindow(event))
                 applyOutcome(runtime.limits.onWindow(pkg, kind, now))
                 if (kind == WindowKind.APP) captureScreen(runtime, pkg, force = true)
                 scheduleTickIfNeeded()
             }
             AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED, AccessibilityEvent.TYPE_VIEW_SCROLLED -> {
                 // Si el servicio arrancó con una app ya abierta, aún no sabe cuál está delante.
-                if (runtime.limits.foregroundPackage() == null && WindowClassifier.classify(pkg) == WindowKind.APP) {
+                if (runtime.limits.foregroundPackage() == null && pkg != homePackage && WindowClassifier.classify(pkg) == WindowKind.APP) {
                     applyOutcome(runtime.limits.onWindow(pkg, WindowKind.APP, now))
                     scheduleTickIfNeeded()
                 }
@@ -200,7 +202,13 @@ class LayerAccessibilityService : AccessibilityService() {
 
     /** ¿El evento viene de la ventana del teclado? Cubre teclados que no están en la lista. */
     private fun isInputMethodWindow(event: AccessibilityEvent): Boolean = try {
-        windows.any { it.id == event.windowId && it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD }
+        val list = windows
+        try {
+            list.any { it.id == event.windowId && it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD }
+        } finally {
+            @Suppress("DEPRECATION")
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) list.forEach { it.recycle() }
+        }
     } catch (_: Exception) {
         false
     }

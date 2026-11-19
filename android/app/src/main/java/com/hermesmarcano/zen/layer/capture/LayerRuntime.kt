@@ -50,6 +50,18 @@ class LayerRuntime(private val app: Application) {
     /** Un solo hilo para guardar y sincronizar: conserva el orden y deja libre el hilo principal. */
     val io: ExecutorService = Executors.newSingleThreadExecutor { r -> Thread(r, "zen-layer-io").apply { isDaemon = true } }
 
+    /** Hilo aparte para los trabajos periódicos y la red: una sincronización lenta no debe retrasar el guardado de lo capturado. */
+    private val jobs: ExecutorService = Executors.newSingleThreadExecutor { r -> Thread(r, "zen-layer-job").apply { isDaemon = true } }
+
+    fun runJob(block: () -> Unit) {
+        jobs.execute {
+            try {
+                block()
+            } catch (_: Exception) {
+            }
+        }
+    }
+
     /**
      * Encola trabajo en [io]. Una excepción suelta en un hilo de Android mata la app, así que aquí se traga: la capa
      * puede fallar en lo suyo (disco lleno, base bloqueada) sin llevarse por delante la alarma de ZEN.
