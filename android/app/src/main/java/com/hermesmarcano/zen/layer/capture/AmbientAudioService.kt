@@ -49,7 +49,8 @@ class AmbientAudioService : Service() {
         try {
             ServiceCompat.startForeground(
                 this, AndroidNotifier.ID_LISTENING, runtime.notifier.listening(),
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE else 0,
+                // El tipo "micrófono" existe desde Android 11 (API 30); antes manda el declarado en el manifiesto.
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE else 0,
             )
         } catch (_: Exception) {
             // Android 12+ no deja arrancar un servicio con micrófono desde segundo plano.
@@ -97,7 +98,8 @@ class AmbientAudioService : Service() {
                 if (now - lastCheckMs >= POLICY_CHECK_MS) {
                     lastCheckMs = now
                     val s = runtime.state.current
-                    if (!s.capture.ambientAudio) break // el usuario apagó la fuente
+                    // Se apagó la fuente o se quitó el cerebro (sin él nadie transcribe el audio): se deja de escuchar.
+                    if (!s.capture.ambientAudio || !s.brainConfigured) break
                     val allowed = runtime.pipeline.decision(Source.AUDIO, "").allowed
                     if (!allowed && capture != null) {
                         // En pausa: se suelta el micrófono (no se escucha) y se cierra el tramo en curso.

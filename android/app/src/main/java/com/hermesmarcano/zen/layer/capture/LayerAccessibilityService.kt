@@ -115,6 +115,7 @@ class LayerAccessibilityService : AccessibilityService() {
                 }
                 if (runtime.limits.foregroundPackage() == pkg) captureScreen(runtime, pkg, force = false)
             }
+            else -> Unit
         }
     }
 

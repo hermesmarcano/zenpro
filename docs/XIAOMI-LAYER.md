@@ -1,0 +1,161 @@
+# ZEN · Capa inteligente (Android / Xiaomi)
+
+Una capa que vive **dentro de la app de ZEN** y observa el teléfono para tres cosas: *recordar* lo que importa
+(texto de pantalla, notificaciones, audio), *cumplir* los límites y bloqueos que el propio usuario se pone, y
+*proponer* respuestas que solo se envían si las apruebas. Está pensada para un Redmi Note 8 con MIUI 12.5.2
+(Android 11) instalado por APK, **sin root y sin tocar el bootloader**.
+
+> **Estado: compila, pasa lint y ~430 pruebas de la capa en JVM/Robolectric. No se ha probado en un teléfono
+> real** (no hay dispositivo ni emulador en el entorno de desarrollo). Ver
+> [Pendiente de validar en el teléfono](#pendiente-de-validar-en-el-teléfono).
+
+## Qué es y qué no es
+
+| Hace | No hace |
+|---|---|
+| Lee el texto de las apps permitidas (servicio de accesibilidad) y lo guarda en una memoria local con búsqueda | Leer contraseñas, bancos, billeteras, gestores de contraseñas, Ajustes ni la propia app |
+| Guarda mensajes y avisos (sin códigos de un solo uso) y permite contestar con la acción «Responder» de la propia notificación | Enviar nada sin tu toque en «Enviar» |
+| Cuenta el tiempo por app, avisa y, si lo pediste, bloquea (saca la app de primer plano) | Bloquear Ajustes, el teléfono o ZEN: el usuario siempre puede desactivar la capa |
+| Escucha por el micrófono, con un aviso fijo, y manda los tramos de voz al *cerebro* para que los transcriba | Grabar llamadas (Android no deja a una app capturar el audio de la llamada, y grabar a otros tiene implicaciones legales) |
+| Se reactiva sola si Xiaomi la mata (con un permiso opcional dado por ADB) | Funcionar como app de sistema: no es root, es una app normal con permisos que concede el usuario |
+
+## Principios de diseño
+
+1. **Todo apagado por defecto**, cada fuente por separado, con una **pausa** global siempre a mano.
+2. **Visible**: el micrófono tiene un aviso fijo mientras escucha (Android 11 no trae el punto verde de privacidad).
+3. **Privacidad antes de guardar**: se quitan códigos de un solo uso, tarjetas (Luhn), cuentas de 18 dígitos,
+   contraseñas etiquetadas y claves (`sk-…`, `ghp_…`, JWT…) *antes* de escribir en disco o enviar. El título y el
+   cuerpo de una notificación se revisan **juntos**: un «Código de verificación» en el título oculta el número del cuerpo.
+4. **El cerebro puede restringir, nunca relajar**: puede proponer una respuesta, bloquear una app (máx. 24 h),
+   pausar la observación o avisar. No puede quitar un bloqueo ni enviar un mensaje.
+5. **Los compromisos tienen fricción**: endurecer un límite vale al instante; **aflojarlo o quitarlo tarda 24 h**.
+   Soltar un bloqueo exige esperar un minuto y escribir un motivo, solo da un *pase* de 15 minutos y máximo 3 al día.
+6. **Mínimo privilegio**: no pide SMS, contactos, ubicación, llamadas, almacenamiento, superposición ni
+   `QUERY_ALL_PACKAGES` (hay una prueba que lo veta). La accesibilidad no declara gestos ni filtro de teclas.
+
+## Instalación en el Redmi Note 8 (MIUI 12.5.2 global)
+
+Los nombres exactos de los menús cambian entre versiones de MIUI; si alguno no coincide, busca el ajuste por nombre.
+
+1. **Instala el APK** (ver [`ANDROID.md`](ANDROID.md)). MIUI avisará de «instalar apps desconocidas» y puede mostrar un
+   análisis de seguridad: es normal en un APK fuera de Play.
+2. Abre ZEN → **Ajustes → Abrir la capa**. Ahí, arriba, la sección **Estado** te dice qué falta y tiene un botón para cada cosa.
+3. **Accesibilidad** (para leer la pantalla y bloquear): Ajustes del teléfono → *Ajustes adicionales → Accesibilidad →
+   Servicios descargados → «ZEN · capa»* → activar. MIUI mostrará un aviso fuerte: lee la descripción, es el texto exacto de lo que hace.
+4. **Acceso a notificaciones**: Ajustes → *Notificaciones y barra de estado → Acceso a notificaciones → ZEN* → activar.
+5. **Micrófono** (opcional, necesita un cerebro configurado): el interruptor pide el permiso.
+6. **Que Xiaomi no la mate** (imprescindible, es lo que más rompe estas apps):
+   - *Seguridad → Permisos → Inicio automático* → activa **ZEN**.
+   - *Ajustes → Batería → Ahorro de batería de las apps → ZEN → **Sin restricciones*** (la pantalla Capa tiene un botón).
+   - En *Recientes*, **bloquea ZEN** (mantén pulsada su tarjeta → candado) para que «limpiar memoria» no la cierre.
+   - Márcalo como hecho en el Estado de la capa («Ya lo hice»).
+7. **Reparación automática (opcional)**: Android no deja que una app se dé a sí misma `WRITE_SECURE_SETTINGS`, pero tú puedes
+   concedérselo **una vez** por ADB. Con él, si Xiaomi apaga el servicio de accesibilidad, la capa lo reactiva sola.
+   En el teléfono: *Opciones de desarrollador → Depuración USB* y **«Depuración USB (ajustes de seguridad)»** (MIUI pide
+   cuenta Mi y SIM para esto). Conecta el cable y, desde un ordenador con `adb`:
+
+   ```
+   adb shell pm grant com.hermesmarcano.zen android.permission.WRITE_SECURE_SETTINGS
+   ```
+
+   La pantalla Capa muestra este comando con un botón para copiarlo. Sin el permiso la capa solo avisa de que el servicio se cayó.
+
+## El cerebro (protocolo)
+
+El *cerebro* es tu servidor (por ejemplo, un agente Hermes). La capa le habla con tres endpoints; **el lado del servidor no está
+implementado en este repositorio**: hace falta un adaptador que hable este protocolo.
+
+- Dirección: `https://…` desde cualquier sitio; `http://` **solo** hacia tu propia red (`localhost`, `10.x`, `172.16–31.x`,
+  `192.168.x`, Tailscale `100.64–127.x`, `*.local`, `*.ts.net`). Sin usuario/contraseña en la URL.
+- Autenticación: cabecera `Authorization: Bearer <token>`. El token nunca va en la URL. No se siguen redirecciones.
+- `User-Agent: ZEN-Layer/<versión>`. Cada teléfono manda un `device` aleatorio (UUID) que se crea al guardar el cerebro.
+
+### `POST /v1/events`
+
+Cuerpo (`application/json`), hasta 100 eventos por lote:
+
+```json
+{"device": "6f1c…", "events": [
+  {"id": "…", "kind": "notification", "package": "com.whatsapp", "title": "Marta",
+   "text": "¿cenamos hoy?", "at": 1763500000000, "extra": {"conv": "com.whatsapp|0|…"}}
+]}
+```
+
+`kind` ∈ `screen`, `notification`, `audio`, `usage`, `system`, `override`. `at` es epoch en milisegundos. `extra.conv` identifica
+la conversación cuando se puede responder. Un `2xx` confirma el lote. `401/403` = token rechazado (la capa se detiene hasta que se
+arregle). Otro `4xx` = rechazado (se reenvía uno a uno para aislar el malo; con 5 rechazos de un mismo elemento se descarta).
+`408/425/429/5xx` o sin red = se reintenta con espera creciente (30 s → 1 h) y **no se pierde nada** durante 3 días.
+
+### `POST /v1/audio`
+
+Cuerpo `audio/wav` (16 kHz, 16 bits, mono) de un tramo de voz. Cabeceras: `X-Zen-Segment-Id`, `X-Zen-Started-At` (epoch ms),
+`X-Zen-Duration-Ms`. El cerebro transcribe; la capa **no** transcribe en el teléfono.
+
+### `GET /v1/commands?device=<id>&cursor=<cursor>`
+
+```json
+{"cursor": "42", "commands": [
+  {"id": "c1", "type": "draft_reply", "conversation": "com.whatsapp|0|…", "text": "Claro, a las 9"},
+  {"id": "c2", "type": "block", "package": "com.zhiliaoapp.musically", "minutes": 60},
+  {"id": "c3", "type": "notify", "title": "ZEN", "text": "Llevas 1 h en TikTok"},
+  {"id": "c4", "type": "pause", "minutes": 30}
+]}
+```
+
+- `id` es obligatorio y se usa para **no ejecutar dos veces** la misma orden (la capa recuerda los últimos 500).
+- `draft_reply` crea un **borrador pendiente** (notificación con «Enviar / Descartar»); nunca envía.
+- `block`: 1–1440 minutos; se ignora para apps protegidas. `pause`: 1–1440 minutos. `notify`: texto de hasta 300 caracteres.
+- Un tipo desconocido se salta (el cerebro puede ser más nuevo que el teléfono). Un `404` significa «este cerebro no manda órdenes»: es válido.
+
+## Qué se guarda, dónde y cuánto
+
+- **En el teléfono**, en el almacenamiento privado de la app (`allowBackup=false`): estado (`layer/layer.json`, incluye el token
+  del cerebro **en texto claro**, protegido solo por el aislamiento de Android), memoria (`zen-layer.db`, SQLite con búsqueda
+  FTS4 sin tildes ni mayúsculas) y audio pendiente (`layer/audio/`).
+- **Retención**: memoria 30 días o 20 000 filas; cola de envío 3 días o 5 000 elementos; audio hasta que se envía (tope de 200 MB).
+- **Borrar**: «Borrar todo…» en la pantalla Capa (memoria + cola + audio); vetar una app también olvida lo que había de ella.
+- **Fuera del teléfono**: nada, salvo lo que mandes al cerebro que tú configures.
+
+## Pendiente de validar en el teléfono
+
+Nada de esto se ha podido probar sin un dispositivo. Las pruebas cubren la lógica y el cableado de Android (Robolectric), no el
+comportamiento real de MIUI:
+
+- Que el servicio de accesibilidad **sobreviva** a la limpieza de memoria y a los reinicios de MIUI con los ajustes del paso 6, y que
+  `WRITE_SECURE_SETTINGS` por ADB funcione en MIUI para reactivarlo.
+- Que `FLAG_SECURE`, campos de contraseña y apps con vistas «no importantes» se comporten como se espera al leer la pantalla.
+- **Micrófono**: que el servicio con micrófono en primer plano arranque y aguante en Android 11/MIUI (desde segundo plano no puede
+  reiniciarse: hay que abrir ZEN, y se avisa), la calidad de audio con el teléfono en el bolsillo, y el umbral del detector de voz.
+  Un ruido fuerte y continuo (coche, ventilador) puede generar tramos largos de ruido: el cerebro debe descartarlos.
+- **Responder desde la notificación**: depende de que WhatsApp (u otra app) exponga la acción «Responder» en esa notificación;
+  si el usuario la descarta, esa conversación deja de ser contestable. WhatsApp puede considerar automatización lo que imite a un
+  cliente; el diseño (borrador + aprobación humana, volumen bajo) es la variante de menor riesgo, no una garantía.
+- Batería y calor con el micrófono y la accesibilidad activos en un equipo de 2019.
+- Que el bloqueo (pulsar «Inicio» al abrir una app bloqueada) no entre en bucles con ninguna app o launcher concreto.
+- `JobScheduler` en MIUI (los trabajos periódicos pueden retrasarse mucho con el ahorro de batería activo).
+
+## Limitaciones por diseño (y por Android)
+
+- **Android 17 con «Protección avanzada»** deshabilita la accesibilidad a apps que no son herramientas de accesibilidad: en un teléfono
+  moderno con ese modo la capa de pantalla no funcionaría. En Android 11 (tu Redmi) no existe.
+- La capa **no es un límite de seguridad**: es una ayuda de compromiso. Quien tenga el teléfono puede desactivar el servicio en Ajustes
+  (por eso Ajustes nunca se bloquea); la fricción está en la propia app, no en el sistema.
+- Play Store: REQUEST_IGNORE_BATTERY_OPTIMIZATIONS y la accesibilidad con este fin no cumplen sus políticas. Es solo para instalar por APK.
+
+## Para desarrollar
+
+Código en `android/app/src/main/java/com/hermesmarcano/zen/layer/`:
+
+- `core/` — lógica pura sin `android.*` (privacidad, política de captura, límites, VAD, cola, borradores, órdenes, reparación).
+- `data/` — estado en JSON atómico, SQLite (línea de tiempo FTS4 + cola) y archivos de audio.
+- `link/` — protocolo, cliente HTTP y motor de sincronización (se prueba contra un servidor HTTP real en `localhost`).
+- `capture/` — adaptadores finos de Android (accesibilidad, notificaciones, micrófono, trabajos, avisos).
+- `ui/` — la pantalla «Capa» (los editores son paneles dentro de la pantalla, no diálogos: un campo de texto dentro de un diálogo
+  impide que Compose llegue a reposo en Robolectric).
+
+```bash
+cd android
+export ANDROID_HOME=/ruta/al/android-sdk
+./gradlew testDebugUnitTest --tests 'com.hermesmarcano.zen.layer.*'   # solo la capa
+./gradlew testDebugUnitTest lintDebug assembleRelease                  # todo, como pide CLAUDE.md
+```

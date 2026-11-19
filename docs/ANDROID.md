@@ -70,6 +70,13 @@ todos los APK se firman con la misma clave (`android/app/zen-sideload.jks`).
 La lógica con reglas de negocio vive en `app/src/main/java/com/hermesmarcano/zen/core` y
 `data`, sin dependencias de Android, y se prueba en JVM (`app/src/test`).
 
+## Capa inteligente (Xiaomi)
+
+Además de la alarma y las tareas, la app incluye una **capa opcional** (todo apagado por defecto) que lee el texto de
+pantalla y las notificaciones, escucha por el micrófono, aplica límites de tiempo por app y propone respuestas que solo se
+envían si las apruebas, con un servidor propio («cerebro») para la memoria. Se abre desde *Ajustes → Abrir la capa*. Guía de
+instalación para un Redmi Note 8 (MIUI 12.5.2), protocolo y qué falta por validar: [`XIAOMI-LAYER.md`](XIAOMI-LAYER.md).
+
 ## Compilar
 
 ```bash
@@ -102,7 +109,8 @@ privada aparte (nunca en el repositorio) y distribuir como AAB.
   un aviso emergente (no abre la pantalla sola): tócalo, o abre ZEN, que lleva directo a apagarla.
 - Si el usuario revoca el permiso de cámara, solo queda el código de respaldo (tras la espera).
 - Sin acelerómetro el volumen simplemente sube de forma continua.
-- Aún no incluye el bloqueo de apps ni la lista de tareas (tampoco están terminados en iOS).
+- El bloqueo de apps de Android vive en la **capa inteligente** (rama del Xiaomi; ver
+  [`XIAOMI-LAYER.md`](XIAOMI-LAYER.md)): límites de tiempo, franjas prohibidas y bloqueos con fricción. En iOS aún no está terminado.
 
 ## Pendiente de validar en dispositivo
 

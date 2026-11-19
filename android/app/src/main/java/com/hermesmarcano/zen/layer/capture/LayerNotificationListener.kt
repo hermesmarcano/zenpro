@@ -1,5 +1,6 @@
 package com.hermesmarcano.zen.layer.capture
 
+import android.annotation.SuppressLint
 import android.app.Notification
 import android.content.ComponentName
 import android.os.Bundle
@@ -54,6 +55,8 @@ internal object NotificationText {
         return ongoing && category != Notification.CATEGORY_MESSAGE
     }
 
+    // Son constantes de texto: el compilador las incrusta, así que existen aunque la API sea más nueva que el mínimo.
+    @SuppressLint("InlinedApi")
     private val NOISE_CATEGORIES = setOf(
         Notification.CATEGORY_TRANSPORT, Notification.CATEGORY_PROGRESS, Notification.CATEGORY_SERVICE,
         Notification.CATEGORY_SYSTEM, Notification.CATEGORY_STATUS, Notification.CATEGORY_NAVIGATION,

@@ -105,3 +105,11 @@ la fase de revisión antes de cada commit (el CI `android.yml` repite lo mismo).
 - Todo nivel de volumen se expresa como sonoridad *percibida* (0..1) y pasa por `VolumeCurve` antes de
   llegar a un reproductor; nunca usar el nivel como ganancia lineal (causaba que "15 %" sonara fuerte).
 - `zen-sideload.jks` es una clave pública solo para sideload; nunca para Google Play.
+- **Capa inteligente del Xiaomi** (`layer/`, ver `docs/XIAOMI-LAYER.md`): todo apagado por defecto, visible y con mínimo privilegio.
+  Reglas que no se rompen: el cerebro puede restringir pero no relajar; aflojar un compromiso tarda 24 h; nunca se envía un mensaje
+  sin aprobación del usuario (y como mucho una vez); Ajustes, el teléfono y ZEN nunca se bloquean (`NeverBlock`); título y cuerpo de
+  una notificación se redactan juntos; todo trabajo en el hilo de E/S pasa por `LayerRuntime.runIo` (una excepción suelta en un hilo mata
+  la app); un servicio en primer plano solo se arranca con `AmbientAudioService.start` (comprueba antes sus precondiciones). Los editores de la
+  pantalla son paneles y no diálogos: un campo de texto dentro de un `AlertDialog` impide que Compose llegue a reposo en Robolectric.
+- Entorno remoto sin SDK: se instala en `~/android-sdk` (cmdline-tools 11076708 + `platforms;android-35` + `build-tools;35.0.0`) y se usa
+  `--max-workers=1 -Dorg.gradle.parallel=false` (Maven Central responde 429 en cuanto se paraleliza).

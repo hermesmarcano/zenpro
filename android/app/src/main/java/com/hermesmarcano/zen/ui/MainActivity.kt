@@ -35,6 +35,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import com.hermesmarcano.zen.alarm.AlarmRuntime
+import com.hermesmarcano.zen.layer.capture.AmbientAudioService
+import com.hermesmarcano.zen.layer.capture.LayerLive
+import com.hermesmarcano.zen.layer.capture.layer
+import com.hermesmarcano.zen.layer.ui.LayerScreen
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -47,6 +51,19 @@ class MainActivity : ComponentActivity() {
         // no a la lista de alarmas.
         if (AlarmRuntime.ring.value != null) {
             startActivity(Intent(this, RingingActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        }
+        resumeLayerAudio()
+    }
+
+    /**
+     * Si el micrófono debería estar escuchando y Xiaomi cerró el servicio, abrir ZEN lo retoma: desde segundo plano Android 11+
+     * no deja arrancar un micrófono, pero con la app a la vista sí. Nunca debe estorbar a la alarma.
+     */
+    private fun resumeLayerAudio() {
+        try {
+            val s = layer.state.current
+            if (s.capture.ambientAudio && s.brainConfigured && !LayerLive.audioRunning) AmbientAudioService.start(this)
+        } catch (_: Exception) {
         }
     }
 
@@ -79,6 +96,7 @@ private const val ALARMS = "alarms"
 private const val PROGRESS = "progress"
 private const val SETTINGS = "settings"
 private const val TRIP = "trip"
+private const val LAYER = "layer"
 private const val NEW_ALARM = "edit:new"
 private val TABS = listOf(TODAY, ALARMS, PROGRESS)
 
@@ -100,7 +118,7 @@ private fun ZenRoot(requestedRoute: String?, onRouteConsumed: () -> Unit) {
     LaunchedEffect(route) { if (route in TABS) lastTab = route }
     LaunchedEffect(requestedRoute) {
         if (requestedRoute != null) {
-            route = if (requestedRoute in TABS) requestedRoute else TODAY
+            route = if (requestedRoute in TABS || requestedRoute == LAYER) requestedRoute else TODAY
             onRouteConsumed()
         }
     }
@@ -143,7 +161,8 @@ private fun ZenRoot(requestedRoute: String?, onRouteConsumed: () -> Unit) {
                 modifier = content,
             )
             route == PROGRESS -> ProgressScreen(content, onOpenSettings = { route = SETTINGS })
-            route == SETTINGS -> SettingsScreen(onClose = { route = lastTab })
+            route == SETTINGS -> SettingsScreen(onClose = { route = lastTab }, onOpenLayer = { route = LAYER })
+            route == LAYER -> LayerScreen(onClose = { route = lastTab })
             route == TRIP -> TripScreen(onClose = { route = ALARMS }, announce = announce)
             route.startsWith("edit:") -> AlarmEditScreen(
                 alarmId = route.removePrefix("edit:").takeIf { it != "new" },
@@ -156,6 +175,6 @@ private fun ZenRoot(requestedRoute: String?, onRouteConsumed: () -> Unit) {
 
 private fun previousTab(route: String, lastTab: String): String = when {
     route == TRIP || route.startsWith("edit:") -> ALARMS
-    route == SETTINGS -> lastTab
+    route == SETTINGS || route == LAYER -> lastTab
     else -> TODAY
 }
