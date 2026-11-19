@@ -81,6 +81,15 @@ todos los APK se firman con la misma clave (`android/app/zen-sideload.jks`).
   - Una sesión que se olvidó cerrar solo cuenta hasta 15 min después de la última serie.
 - **Progreso**: XP, niveles, racha de despertar y de tarea prioritaria, estadísticas de entreno y 20 logros.
   Análisis completo de UX y gamificación en [`ANDROID-UX-GAMIFICACION.md`](ANDROID-UX-GAMIFICACION.md).
+- **Fiabilidad de la alarma** (Alarmas → "¿Suena a su hora?", o Ajustes): `core/AlarmHealth` + `data/AlarmLog` guardan
+  en `alarm_log.json` qué pasó con cada alarma (programada, recibida con su retraso, descartada, perdida, reprogramada).
+  Una alarma activa que pasó su hora hace más de 5 min sin que el sistema entregara el aviso se anota como **perdida** y se
+  reprograma al abrir la app (tras 15 s, por si el sistema aún entrega un aviso retrasado); la tarjeta deja de decir
+  "suena en menos de 1 min" para una alarma ya vencida y la cuenta atrás se relee al volver a la app. La pantalla
+  *Fiabilidad* tiene una **prueba de 1 minuto** (mismo camino `AlarmManager → AlarmReceiver`, sin sonar de verdad; no comprueba el
+  sonido ni la pantalla de apagado), el diálogo del sistema para exentar a ZEN del ahorro de batería, accesos a *Inicio
+  automático* y *Sin restricciones* de Xiaomi/Redmi/POCO y el registro. Pasar la prueba la primera vez da el logro
+  "Alarma a prueba" (sin XP).
 - **Reprogramación**: `BootReceiver` recalcula alarmas tras reinicio, cambio de hora/zona o
   actualización. Una alarma de una sola vez que ya pasó (teléfono apagado) se desactiva en vez
   de sonar al día siguiente.
@@ -109,6 +118,9 @@ privada aparte (nunca en el repositorio) y distribuir como AAB.
 
 ## Limitaciones conocidas
 
+- Xiaomi/Redmi/POCO (MIUI/HyperOS) y otros fabricantes congelan las apps en segundo plano por la noche y pueden entregar la alarma tarde o
+  nunca si ZEN no está exenta del ahorro de batería y con el inicio automático activado. ZEN no puede saltarse eso: por eso existe la prueba
+  y el registro (ver *Fiabilidad de la alarma*).
 - Si el usuario *fuerza el cierre* de la app desde Ajustes, Android cancela sus alarmas hasta
   que vuelva a abrirla. No se puede evitar sin ser app de sistema.
 - Tras un reinicio, las alarmas se reprograman cuando el usuario desbloquea el teléfono por

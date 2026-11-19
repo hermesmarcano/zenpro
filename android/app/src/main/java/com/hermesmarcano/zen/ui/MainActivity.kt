@@ -34,6 +34,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import com.hermesmarcano.zen.alarm.AlarmActions
 import com.hermesmarcano.zen.alarm.AlarmRuntime
 import kotlinx.coroutines.launch
 
@@ -41,8 +42,19 @@ class MainActivity : ComponentActivity() {
     /** Ruta pedida desde fuera (p. ej. "ver mis tareas" en la pantalla de éxito). Se consume una vez. */
     private val requestedRoute = mutableStateOf<String?>(null)
 
+    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val healOverdue = Runnable { AlarmActions.healOverdue(this) }
+
+    override fun onPause() {
+        handler.removeCallbacks(healOverdue)
+        super.onPause()
+    }
+
     override fun onResume() {
         super.onResume()
+        // Una alarma que ya pasó su hora sin procesarse se anota como perdida y se reprograma. Se espera unos
+        // segundos: si el sistema entrega justo ahora un aviso retrasado, debe poder sonar antes de reprogramar.
+        handler.postDelayed(healOverdue, HEAL_DELAY_MS)
         // Volver a ZEN (icono, notificación) con una alarma sonando lleva a la pantalla de apagado,
         // no a la lista de alarmas.
         if (AlarmRuntime.ring.value != null) {
@@ -71,6 +83,8 @@ class MainActivity : ComponentActivity() {
         const val EXTRA_ROUTE = "route"
         const val ROUTE_TODAY = "today"
         const val ROUTE_WORKOUT = "workout"
+        const val ROUTE_RELIABILITY = "reliability"
+        private const val HEAL_DELAY_MS = 15_000L
     }
 }
 
@@ -80,6 +94,7 @@ private const val PROGRESS = "progress"
 private const val WORKOUT = MainActivity.ROUTE_WORKOUT
 private const val SETTINGS = "settings"
 private const val TRIP = "trip"
+private const val RELIABILITY = MainActivity.ROUTE_RELIABILITY
 private const val NEW_ALARM = "edit:new"
 private val TABS = listOf(TODAY, WORKOUT, ALARMS, PROGRESS)
 
@@ -101,7 +116,7 @@ private fun ZenRoot(requestedRoute: String?, onRouteConsumed: () -> Unit) {
     LaunchedEffect(route) { if (route in TABS) lastTab = route }
     LaunchedEffect(requestedRoute) {
         if (requestedRoute != null) {
-            route = if (requestedRoute in TABS) requestedRoute else TODAY
+            route = if (requestedRoute in TABS || requestedRoute == RELIABILITY) requestedRoute else TODAY
             onRouteConsumed()
         }
     }
@@ -143,10 +158,12 @@ private fun ZenRoot(requestedRoute: String?, onRouteConsumed: () -> Unit) {
                 onEditAlarm = { route = "edit:$it" },
                 onOpenSettings = { route = SETTINGS },
                 onOpenTrip = { route = TRIP },
+                onOpenReliability = { route = RELIABILITY },
                 modifier = content,
             )
             route == PROGRESS -> ProgressScreen(content, onOpenSettings = { route = SETTINGS })
-            route == SETTINGS -> SettingsScreen(onClose = { route = lastTab })
+            route == SETTINGS -> SettingsScreen(onClose = { route = lastTab }, onOpenReliability = { route = RELIABILITY })
+            route == RELIABILITY -> ReliabilityScreen(content, onBack = { route = ALARMS })
             route == TRIP -> TripScreen(onClose = { route = ALARMS }, announce = announce)
             route.startsWith("edit:") -> AlarmEditScreen(
                 alarmId = route.removePrefix("edit:").takeIf { it != "new" },
@@ -158,7 +175,7 @@ private fun ZenRoot(requestedRoute: String?, onRouteConsumed: () -> Unit) {
 }
 
 private fun previousTab(route: String, lastTab: String): String = when {
-    route == TRIP || route.startsWith("edit:") -> ALARMS
+    route == TRIP || route == RELIABILITY || route.startsWith("edit:") -> ALARMS
     route == SETTINGS -> lastTab
     else -> TODAY
 }

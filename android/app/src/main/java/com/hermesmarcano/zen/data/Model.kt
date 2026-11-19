@@ -94,6 +94,8 @@ data class ZenSettings(
     val startVolumePercent: Int = DEFAULT_START_VOLUME_PERCENT,
     /** El usuario ya vio la pista de "mantén y arrastra" en la lista de tareas. */
     val taskHintSeen: Boolean = false,
+    /** Hasta cuándo (epoch ms) el usuario ya vio los avisos de "una alarma no sonó a su hora". */
+    val diagnosticsAckAt: Long = 0L,
 ) {
     /** Nivel inicial en 0..1, acotado: por debajo de 5 % no se oiría y por encima de 50 % deja de ser "empezar bajo". */
     val startVolume: Float get() = startVolumePercent.coerceIn(MIN_START_VOLUME_PERCENT, MAX_START_VOLUME_PERCENT) / 100f
@@ -174,6 +176,8 @@ data class Progress(
     val goalWeekStreak: Int = 0,
     val bestGoalWeekStreak: Int = 0,
     val lastGoalWeek: Long? = null,
+    /** Pruebas de alarma de 1 minuto que llegaron a tiempo. */
+    val alarmTestsPassed: Int = 0,
 )
 
 data class ZenState(

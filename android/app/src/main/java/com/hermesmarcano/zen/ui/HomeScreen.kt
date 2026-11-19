@@ -30,7 +30,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.produceState
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableLongStateOf
 import kotlinx.coroutines.delay
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -45,6 +46,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import com.hermesmarcano.zen.alarm.AlarmActions
+import com.hermesmarcano.zen.core.AlarmHealth
 import com.hermesmarcano.zen.core.RingCountdownFormatter
 import com.hermesmarcano.zen.core.TripPolicy
 import com.hermesmarcano.zen.core.Weekday
@@ -61,17 +63,25 @@ fun HomeScreen(
     modifier: Modifier = Modifier,
     onOpenSettings: () -> Unit = {},
     onOpenTrip: () -> Unit = {},
+    onOpenReliability: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val state by context.zenApp.repository.state.collectAsState()
+    val log by context.zenApp.alarmLog.events.collectAsState()
     var permissionTick by remember { mutableIntStateOf(0) }
-    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { permissionTick++ }
-    val nowMillis by produceState(System.currentTimeMillis()) {
+    var nowMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    // Al volver a la app la hora se relee al instante: tras horas en segundo plano, la cuenta atrás no puede enseñar la de anoche.
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        permissionTick++
+        nowMillis = System.currentTimeMillis()
+    }
+    LaunchedEffect(Unit) {
         while (true) {
-            delay(30_000)
-            value = System.currentTimeMillis()
+            delay(15_000)
+            nowMillis = System.currentTimeMillis()
         }
     }
+    val problems = remember(log, nowMillis, state.settings.diagnosticsAckAt) { AlarmHealth.problems(log, nowMillis, state.settings.diagnosticsAckAt) }
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
@@ -95,6 +105,21 @@ fun HomeScreen(
                     color = MaterialTheme.colorScheme.primary,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.padding(top = 8.dp),
+                )
+            }
+        }
+        if (problems.isNotEmpty()) {
+            item(key = "problems") {
+                ProblemsCard(
+                    problem = problems.last(),
+                    count = problems.size,
+                    onOpen = onOpenReliability,
+                    onDismiss = {
+                        try {
+                            context.zenApp.repository.update { it.copy(settings = it.settings.copy(diagnosticsAckAt = System.currentTimeMillis())) }
+                        } catch (_: IOException) {
+                        }
+                    },
                 )
             }
         }
@@ -132,6 +157,9 @@ fun HomeScreen(
                 shape = RoundedCornerShape(14.dp),
             ) { Text("Nueva alarma", fontSize = 16.sp) }
         }
+        item(key = "reliability") {
+            TextButton(onClick = onOpenReliability, modifier = Modifier.fillMaxWidth()) { Text("¿Suena a su hora? Fiabilidad de la alarma") }
+        }
     }
 }
 
@@ -163,11 +191,16 @@ private fun AlarmCard(alarm: AlarmEntity, state: ZenState, nowMillis: Long, onEd
                 )
                 val next = alarm.nextFireAt
                 if (alarm.enabled && next != null) {
-                    Text(
-                        RingCountdownFormatter.format(next - nowMillis),
-                        color = MaterialTheme.colorScheme.primary,
-                        fontSize = 14.sp,
-                    )
+                    if (AlarmHealth.isOverdue(alarm, nowMillis)) {
+                        // Pasó su hora y el aviso nunca se procesó: no se puede decir "suena en menos de 1 min".
+                        Text("No sonó a su hora (${String.format(java.util.Locale.ROOT, "%02d:%02d", alarm.hour, alarm.minute)}).", color = MaterialTheme.colorScheme.error, fontSize = 14.sp)
+                    } else {
+                        Text(
+                            RingCountdownFormatter.format(next - nowMillis),
+                            color = MaterialTheme.colorScheme.primary,
+                            fontSize = 14.sp,
+                        )
+                    }
                 }
             }
             Switch(
@@ -175,6 +208,37 @@ private fun AlarmCard(alarm: AlarmEntity, state: ZenState, nowMillis: Long, onEd
                 onCheckedChange = onToggle,
                 modifier = Modifier.semantics { contentDescription = "Alarma de las $time" },
             )
+        }
+    }
+}
+
+/** "Una alarma no sonó a su hora": lo que pasó y cómo evitarlo. */
+@Composable
+private fun ProblemsCard(problem: AlarmHealth.Event, count: Int, onOpen: () -> Unit, onDismiss: () -> Unit) {
+    val zone = java.time.ZoneId.systemDefault()
+    val expected = problem.expectedAt?.let { java.time.Instant.ofEpochMilli(it).atZone(zone).format(java.time.format.DateTimeFormatter.ofPattern("HH:mm")) }
+    val late = AlarmHealth.latenessMs(problem)
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+        shape = RoundedCornerShape(16.dp),
+    ) {
+        Column(modifier = Modifier.padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                if (problem.kind == AlarmHealth.Kind.MISSED) "Una alarma no sonó a su hora" else "Una alarma llegó tarde",
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+            )
+            Text(
+                (if (problem.kind == AlarmHealth.Kind.MISSED) "La de las ${expected ?: "?"} no llegó a procesarse. Suele pasar cuando el teléfono frena a ZEN en segundo plano." else "La de las ${expected ?: "?"} llegó ${late?.let { AlarmHealth.latenessText(it) } ?: "tarde"}.") +
+                    if (count > 1) " ($count avisos)" else "",
+                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+            )
+            Row {
+                TextButton(onClick = onOpen) { Text("Cómo arreglarlo") }
+                TextButton(onClick = onDismiss) { Text("Entendido") }
+            }
         }
     }
 }

@@ -116,6 +116,7 @@ internal object StateJson {
         .put("goalWeekStreak", p.goalWeekStreak)
         .put("bestGoalWeekStreak", p.bestGoalWeekStreak)
         .put("lastGoalWeek", p.lastGoalWeek ?: JSONObject.NULL)
+        .put("alarmTestsPassed", p.alarmTestsPassed)
 
     private fun decodeProgress(json: JSONObject?): Progress {
         if (json == null) return Progress()
@@ -150,6 +151,7 @@ internal object StateJson {
             goalWeekStreak = json.optInt("goalWeekStreak").coerceAtLeast(0),
             bestGoalWeekStreak = maxOf(json.optInt("bestGoalWeekStreak").coerceAtLeast(0), json.optInt("goalWeekStreak").coerceAtLeast(0)),
             lastGoalWeek = longOrNull("lastGoalWeek"),
+            alarmTestsPassed = json.optInt("alarmTestsPassed").coerceAtLeast(0),
         )
     }
 
@@ -188,6 +190,7 @@ internal object StateJson {
         .put("completionSound", encodeSound(settings.completionSound))
         .put("startVolumePercent", settings.startVolumePercent)
         .put("taskHintSeen", settings.taskHintSeen)
+        .put("diagnosticsAckAt", settings.diagnosticsAckAt)
 
     private fun decodeSettings(json: JSONObject?): ZenSettings {
         val defaults = ZenSettings()
@@ -198,6 +201,7 @@ internal object StateJson {
             startVolumePercent = json.optInt("startVolumePercent", defaults.startVolumePercent)
                 .coerceIn(ZenSettings.MIN_START_VOLUME_PERCENT, ZenSettings.MAX_START_VOLUME_PERCENT),
             taskHintSeen = json.optBoolean("taskHintSeen", false),
+            diagnosticsAckAt = json.optLong("diagnosticsAckAt", 0L).coerceAtLeast(0L),
         )
     }
 

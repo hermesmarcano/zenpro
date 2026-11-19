@@ -12,6 +12,8 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- Aviso exacto de fin de descanso entre series (apps de alarma: concedido sin pedirlo desde Android 13). -->
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <!-- Pedir al usuario que exima a ZEN del ahorro de batería: sin esto algunos teléfonos retrasan o pierden la alarma. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32" />
 
     <!-- La cámara no es obligatoria para instalar: sin ella queda el código de respaldo. -->

@@ -175,6 +175,15 @@ object GameEngine {
         return finish(state, state.copy(progress = progress), day, xp, flags = flags)
     }
 
+    /**
+     * Una prueba de alarma de 1 minuto llegó a tiempo. Solo da el logro (la primera vez): no hay XP, porque
+     * repetirla a voluntad no es un hábito que premiar; su valor es saber que la alarma funciona.
+     */
+    fun recordAlarmTest(state: ZenState, today: LocalDate): Result {
+        val progress = state.progress.copy(alarmTestsPassed = (state.progress.alarmTestsPassed + 1).coerceAtMost(1_000_000))
+        return finish(state, state.copy(progress = progress), today.toEpochDay(), 0)
+    }
+
     /** Empieza un viaje (sustituye al anterior si lo hubiera). */
     fun startTrip(state: ZenState, trip: Trip, today: LocalDate): Result {
         val day = today.toEpochDay()

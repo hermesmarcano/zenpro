@@ -91,7 +91,8 @@ enum class Achievement(val id: String, val title: String, val description: Strin
     FIRST_RECORD("first_record", "Marca personal", "Superaste tu mejor marca en un ejercicio."),
     GOAL_WEEK("goal_week", "Semana cumplida", "Cumpliste tu objetivo semanal de entrenos."),
     GOAL_WEEKS_4("goal_weeks_4", "Un mes de constancia", "4 semanas seguidas cumpliendo tu objetivo."),
-    TONNE_CLUB("tonne_club", "Diez toneladas", "Moviste 10 000 kg en total.");
+    TONNE_CLUB("tonne_club", "Diez toneladas", "Moviste 10 000 kg en total."),
+    ALARM_CHECKED("alarm_checked", "Alarma a prueba", "Comprobaste que tu alarma llega a su hora.");
 }
 
 object Achievements {
@@ -120,5 +121,6 @@ object Achievements {
         Achievement.GOAL_WEEK -> p.goalWeeks >= 1
         Achievement.GOAL_WEEKS_4 -> p.bestGoalWeekStreak >= 4
         Achievement.TONNE_CLUB -> p.workoutVolumeKg >= 10_000L
+        Achievement.ALARM_CHECKED -> p.alarmTestsPassed >= 1
     }
 }

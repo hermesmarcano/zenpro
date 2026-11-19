@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import com.hermesmarcano.zen.alarm.Notifications
 import com.hermesmarcano.zen.alarm.RestTimer
+import com.hermesmarcano.zen.data.AlarmLog
 import com.hermesmarcano.zen.data.StateRepository
 import com.hermesmarcano.zen.data.WorkoutRepository
 import com.hermesmarcano.zen.photo.PhotoStore
@@ -19,6 +20,10 @@ class ZenApp : Application() {
         private set
 
     lateinit var workouts: WorkoutRepository
+        private set
+
+    /** Qué pasó con cada alarma (programada, recibida, perdida…): para diagnosticar, ver [com.hermesmarcano.zen.core.AlarmHealth]. */
+    lateinit var alarmLog: AlarmLog
         private set
 
     /** Olvida tareas de hace más de una semana y un viaje que ya terminó. Nunca bloquea el arranque. */
@@ -38,6 +43,7 @@ class ZenApp : Application() {
     override fun onCreate() {
         super.onCreate()
         repository = StateRepository(File(filesDir, "state.json"))
+        alarmLog = AlarmLog(File(filesDir, "alarm_log.json"))
         workouts = WorkoutRepository(File(filesDir, "workouts.json"), File(filesDir, "active_workout.json"))
         Notifications.createChannels(this)
         RestTimer.createChannels(this)
