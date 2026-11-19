@@ -11,6 +11,23 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
+    <!-- Capa inteligente (ver docs/XIAOMI-LAYER.md). Cada fuente se activa por separado y empieza apagada. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <!-- No se puede conceder desde la app: se declara para que `adb shell pm grant` pueda dárselo (reparación automática de la accesibilidad). -->
+    <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" tools:ignore="ProtectedPermissions" />
+
+    <!-- Android 11 oculta las apps instaladas: así se ven las que tienen icono (para elegir cuáles limitar). -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
+
     <!-- La cámara no es obligatoria para instalar: sin ella queda el código de respaldo. -->
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
@@ -24,6 +41,8 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:label="@string/app_name"
         android:supportsRtl="true"
+        android:usesCleartextTraffic="true"
+        tools:ignore="UsesCleartextTraffic"
         android:theme="@style/Theme.ZEN">
 
         <activity
@@ -57,6 +76,42 @@
             android:foregroundServiceType="mediaPlayback" />
 
         <receiver android:name=".alarm.AlarmReceiver" android:exported="false" />
+
+        <!-- Capa inteligente -->
+        <service
+            android:name=".layer.capture.LayerAccessibilityService"
+            android:exported="true"
+            android:label="@string/layer_accessibility_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/layer_accessibility_config" />
+        </service>
+
+        <service
+            android:name=".layer.capture.LayerNotificationListener"
+            android:exported="true"
+            android:label="@string/layer_listener_label"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name=".layer.capture.AmbientAudioService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
+
+        <service
+            android:name=".layer.capture.LayerJobService"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
+        <receiver android:name=".layer.capture.LayerActionReceiver" android:exported="false" />
 
         <receiver android:name=".alarm.BootReceiver" android:exported="true">
             <intent-filter>

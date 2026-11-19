@@ -70,6 +70,7 @@ class MainActivity : ComponentActivity() {
     companion object {
         const val EXTRA_ROUTE = "route"
         const val ROUTE_TODAY = "today"
+        const val ROUTE_LAYER = "layer"
     }
 }
 

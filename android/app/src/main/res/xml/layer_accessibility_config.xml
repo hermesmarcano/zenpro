@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Lee ventanas y su texto, pero NO toca la pantalla (no declara canPerformGestures) ni inyecta teclas.
+  Lo único que "hace" es pulsar Inicio para sacar una app que el usuario bloqueó (acción global).
+  flagRetrieveInteractiveWindows: saber si una ventana es un teclado.
+-->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged|typeViewScrolled"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagRetrieveInteractiveWindows|flagIncludeNotImportantViews"
+    android:canRetrieveWindowContent="true"
+    android:description="@string/layer_accessibility_description"
+    android:notificationTimeout="300" />

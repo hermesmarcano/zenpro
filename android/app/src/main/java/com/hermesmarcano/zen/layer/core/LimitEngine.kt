@@ -218,11 +218,15 @@ class BlockActions(
     private val log: (title: String, text: String, pkg: String) -> Unit = { _, _, _ -> },
 ) {
     /** Bloquea [pkg] hasta medianoche. Devuelve `false` si la app está protegida (ajustes, teléfono, esta app). */
-    fun blockUntilEndOfDay(pkg: String, reason: BlockReason, nowMs: Long): Boolean {
-        if (NeverBlock.isProtected(pkg, ownPackage)) return false
-        val entry = BlockEntry(pkg, clock.nextDayStart(nowMs), reason)
+    fun blockUntilEndOfDay(pkg: String, reason: BlockReason, nowMs: Long): Boolean =
+        blockUntil(pkg, clock.nextDayStart(nowMs), reason, nowMs)
+
+    /** Bloquea [pkg] hasta [untilMs]. Un bloqueo nunca acorta a otro más largo que ya esté puesto. */
+    fun blockUntil(pkg: String, untilMs: Long, reason: BlockReason, nowMs: Long): Boolean {
+        if (NeverBlock.isProtected(pkg, ownPackage) || untilMs <= nowMs) return false
+        val entry = BlockEntry(pkg, untilMs, reason)
         state.update { it.copy(blocks = BlockBook.add(it.blocks, entry, ownPackage, nowMs)) }
-        log("Bloqueo", "Bloqueada $pkg hasta medianoche (${reason.name.lowercase()}).", pkg)
+        log("Bloqueo", "Bloqueada $pkg (${reason.name.lowercase()}).", pkg)
         return true
     }
 
