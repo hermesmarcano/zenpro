@@ -12,7 +12,7 @@ import unicodedata
 from dataclasses import dataclass, field
 
 from . import config
-from .sanitize import clean_line, clean_text
+from .sanitize import clean_output_text
 
 MAX_CONTENT_CHARS = 64_000
 MAX_COMMANDS = 3
@@ -88,7 +88,7 @@ def parse_model_output(content: str, cfg: config.Config) -> ModelOutput:
     out = ModelOutput(True)
     items = data["commands"]
     if len(items) > MAX_COMMANDS:
-        out.rejected.extend(["too_many"] * (len(items) - MAX_COMMANDS))
+        out.rejected.append("too_many")  # una sola entrada: una lista enorme no debe inflar la auditoría
         items = items[:MAX_COMMANDS]
     for item in items:
         candidate, reason = _check_command(item, cfg)
@@ -117,11 +117,11 @@ def _check_command(item: object, cfg: config.Config) -> tuple[Candidate | None, 
         return None, "bad_schema"
 
     if kind == "draft_reply":
-        text = clean_text(item["text"], DRAFT_MAX_CHARS)
+        text = clean_output_text(item["text"], DRAFT_MAX_CHARS)
         return (Candidate(kind, text=text), "") if text else (None, "empty_text")
     if kind == "notify":
         raw = item["text"]
-        text = clean_line(raw, NOTIFY_MAX_CHARS)
+        text = clean_output_text(raw, NOTIFY_MAX_CHARS, single_line=True)
         if not text:
             return None, "empty_text"
         if has_link(text):

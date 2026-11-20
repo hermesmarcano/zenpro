@@ -73,5 +73,59 @@ class AuditTest(unittest.TestCase):
         self.assertEqual(total, 12)
 
 
+class ShortWriteTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp = Path(tempfile.mkdtemp(prefix="zen-audit-short-"))
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.path = self.tmp / "audit.jsonl"
+        self.audit = Audit(self.path)
+        self.addCleanup(self.audit.close)
+
+    def test_a_write_that_returns_less_than_the_line_is_completed(self):
+        from unittest import mock
+
+        real = os.write
+        with mock.patch.object(audit_module.os, "write", side_effect=lambda fd, data: real(fd, bytes(data)[:7])):
+            self.assertTrue(self.audit.log(type="event", n=1))
+        self.assertEqual([json.loads(l)["n"] for l in self.path.read_text().splitlines()], [1])
+
+    def test_a_write_that_fails_halfway_leaves_no_half_line_and_reports_false(self):
+        from unittest import mock
+
+        self.audit.log(type="event", n=0)
+        before = self.path.read_bytes()
+        real = os.write
+        calls = {"n": 0}
+
+        def flaky(fd, data):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return real(fd, bytes(data)[:10])  # escribe un trozo…
+            raise OSError(28, "No space left on device")  # …y se llena el disco
+
+        with mock.patch.object(audit_module.os, "write", side_effect=flaky):
+            self.assertFalse(self.audit.log(type="event", n=1))
+        self.assertEqual(self.path.read_bytes(), before)  # sin media línea
+        self.assertFalse(self.audit.ok)
+        self.assertTrue(self.audit.log(type="event", n=2))
+        self.assertTrue(self.audit.ok)
+        self.assertEqual([json.loads(l)["n"] for l in self.path.read_text().splitlines()], [0, 2])
+
+    def test_a_broken_stderr_does_not_make_log_raise(self):
+        import contextlib
+
+        class Broken:
+            def write(self, *_):
+                raise OSError("stderr roto")
+
+            def flush(self):
+                raise OSError("stderr roto")
+
+        os.close(self.audit._fd)
+        self.audit._fd = 987_654
+        with contextlib.redirect_stderr(Broken()):
+            self.assertFalse(self.audit.log(type="event"))
+
+
 if __name__ == "__main__":
     unittest.main()

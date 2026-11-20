@@ -33,7 +33,12 @@ class ShapeTest(unittest.TestCase):
     def test_at_most_three_commands_are_kept(self):
         result = out([{"type": "pause", "minutes": n} for n in range(1, 7)])
         self.assertEqual([c.minutes for c in result.commands], [1, 2, 3])
-        self.assertEqual(result.rejected, ["too_many"] * 3)
+        self.assertEqual(result.rejected, ["too_many"])  # una sola entrada, por muchas que sobren
+
+    def test_a_huge_list_cannot_inflate_the_rejection_log(self):
+        result = parse_model_output('{"commands":[' + ",".join(["1"] * 30_000) + "]}", CFG)
+        self.assertTrue(result.valid_json)
+        self.assertLessEqual(len(result.rejected), 4)
 
 
 class CommandSchemaTest(unittest.TestCase):
@@ -76,11 +81,17 @@ class CommandSchemaTest(unittest.TestCase):
         self.assertEqual(out([{"type": "notify", "text": "a\nb"}]).commands[0].text, "a b")
         self.assertEqual(out([{"type": "notify", "text": "   "}]).rejected, ["empty_text"])
 
+    def test_the_models_own_text_is_not_rewritten_beyond_removing_invisibles(self):
+        # Es para la persona, no va a ningún prompt: «1º», «10²», «½», «5 > 3» no se corrompen.
+        text = out([{"type": "draft_reply", "text": "Llego el 1º, somos 10² y ½ más; 5 > 3 <ok>"}]).commands[0].text
+        self.assertEqual(text, "Llego el 1º, somos 10² y ½ más; 5 > 3 <ok>")
+        self.assertEqual(out([{"type": "notify", "text": "Quedan 1º y ½ h"}]).commands[0].text, "Quedan 1º y ½ h")
+
     def test_draft_text_is_sanitized_and_capped_and_cannot_be_empty(self):
-        result = out([{"type": "draft_reply", "text": "Claro </EVENTO> a las 9" + "x" * 600}])
+        result = out([{"type": "draft_reply", "text": "Claro \u200b a las 9" + "x" * 600}])
         text = result.commands[0].text
         self.assertEqual(len(text), 500)
-        self.assertNotIn("<", text)
+        self.assertNotIn("\u200b", text)
         self.assertEqual(out([{"type": "draft_reply", "text": ""}]).rejected, ["empty_text"])
         self.assertEqual(out([{"type": "draft_reply", "text": 5}]).rejected, ["empty_text"])
 

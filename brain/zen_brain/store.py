@@ -89,7 +89,10 @@ class Store:
                 )
                 self._db.execute("COMMIT")
             except BaseException:
-                self._db.execute("ROLLBACK")
+                try:
+                    self._db.execute("ROLLBACK")
+                except sqlite3.Error:
+                    pass  # si falló el propio BEGIN/disco lleno, no se enmascara el error real
                 raise
             return int(cur.lastrowid)
 

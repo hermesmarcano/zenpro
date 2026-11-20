@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import signal
 import stat
 import sys
@@ -24,6 +25,24 @@ from .server import App, make_server
 from .store import Store
 from .stt import NullTranscriber, Transcriber, WhisperTranscriber
 from .tokens import TokenStore
+
+
+def load_env_file(path: Path) -> dict[str, str]:
+    """Lee un archivo KEY=VALOR (como el .env de systemd) sin pasar por un shell: sin expansiones ni ejecución de nada, y una línea
+    rara no rompe el resto (ni impide, p. ej., revocar un token en una emergencia)."""
+    values: dict[str, str] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key, value = key.strip(), value.strip()
+        if not re.fullmatch(r"[A-Z][A-Z0-9_]*", key):
+            continue
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
+        values[key] = value
+    return values
 
 
 def check_private(path: Path, *, directory: bool = False) -> str | None:
@@ -131,7 +150,7 @@ def cmd_tokens(env: Mapping[str, str], args: argparse.Namespace) -> int:
         else:
             for label in store.labels():
                 print(label)
-    except ValueError as exc:
+    except (ValueError, OSError, KeyError, TypeError) as exc:  # archivo roto, sin permisos, mal formado…
         print(f"Error: {exc}", file=sys.stderr)
         return 1
     return 0
@@ -211,6 +230,12 @@ def cmd_fetch_model(env: Mapping[str, str]) -> int:
 
 def main(argv: Sequence[str] | None = None, env: Mapping[str, str] | None = None) -> int:
     env = os.environ if env is None else env
+    if env.get("ZEN_ENV_FILE"):
+        try:
+            env = {**load_env_file(Path(env["ZEN_ENV_FILE"])), **env}  # lo que ya esté en el entorno manda sobre el archivo
+        except OSError as exc:
+            print(f"No se pudo leer ZEN_ENV_FILE ({type(exc).__name__})", file=sys.stderr)
+            return 2
     parser = argparse.ArgumentParser(prog="zen_brain")
     sub = parser.add_subparsers(dest="cmd", required=True)
     sub.add_parser("serve")

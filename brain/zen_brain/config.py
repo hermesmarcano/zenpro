@@ -31,7 +31,7 @@ class Config:
     hermes_timeout_s: float = 60.0
 
     data_dir: Path = Path("/opt/zen-brain/data")
-    audit_path: Path = Path("/opt/zen-brain/audit.jsonl")
+    audit_path: Path = Path("/opt/zen-brain/audit/audit.jsonl")
     tokens_file: Path = Path("/opt/zen-brain/tokens.json")
 
     # Apps que el modelo puede pedir bloquear. Vacía = el cerebro no bloquea nada (valor seguro por defecto).

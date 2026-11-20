@@ -10,7 +10,9 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from zen_brain import cli
-from zen_brain.config import ConfigError, from_env
+from pathlib import Path
+
+from zen_brain.config import Config, ConfigError, from_env
 from zen_brain.tokens import TokenStore
 
 KEY = "h" * 40
@@ -113,6 +115,38 @@ class CliTest(unittest.TestCase):
         self.assertEqual(stats["decisiones"], {"processed": 1, "model_invalid": 1, "skipped_kind": 1})
         self.assertEqual((stats["respuestas_no_json_pct"], stats["tokens"], stats["coste_estimado"], stats["alertas"]), (50.0, 2000, 1.0, 1))
         self.assertEqual((stats["ordenes_emitidas"], stats["ordenes_rechazadas"], stats["ordenes_rechazadas_pct"]), (1, 2, 66.7))
+
+    def test_the_default_audit_path_is_inside_the_directories_the_service_may_write(self):
+        self.assertEqual(Config().audit_path, Path("/opt/zen-brain/audit/audit.jsonl"))
+
+    def test_the_env_file_is_read_without_a_shell(self):
+        env_file = self.tmp / ".env"
+        env_file.write_text('# comentario\nZEN_PORT=9001\nZEN_BLOCK_ALLOWLIST="a.b.c, d.e.f"\nMAL FORMADO CON ESPACIOS\nZEN_X = 1\nexport NO=1\n\nZEN_STT=off\n')
+        values = cli.load_env_file(env_file)
+        self.assertEqual(values["ZEN_PORT"], "9001")
+        self.assertEqual(values["ZEN_BLOCK_ALLOWLIST"], "a.b.c, d.e.f")
+        self.assertEqual(values["ZEN_STT"], "off")
+        self.assertNotIn("NO", values)
+        # Y lo usa el CLI: `tokens` solo necesita ZEN_ENV_FILE.
+        env_file.write_text(f"ZEN_TOKENS_FILE={self.tmp / 'desde-env.json'}\n")
+        code, out, _ = run(["tokens", "add", "redmi"], {"ZEN_ENV_FILE": str(env_file)})
+        self.assertEqual(code, 0)
+        self.assertTrue((self.tmp / "desde-env.json").exists())
+        # Lo que ya está en el entorno manda sobre el archivo.
+        code, out, _ = run(["tokens", "list"], {"ZEN_ENV_FILE": str(env_file), "ZEN_TOKENS_FILE": str(self.tmp / "otro.json")})
+        self.assertEqual(out.strip(), "")
+
+    def test_an_unreadable_env_file_is_reported_not_crashed(self):
+        code, _, err = run(["check"], {"ZEN_ENV_FILE": str(self.tmp / "no-existe")})
+        self.assertEqual(code, 2)
+        self.assertIn("ZEN_ENV_FILE", err)
+
+    def test_a_broken_tokens_file_gives_an_error_message_not_a_traceback(self):
+        (self.tmp / "tokens.json").write_text("[]")
+        for args in (["tokens", "list"], ["tokens", "add", "redmi"], ["tokens", "revoke", "redmi"]):
+            code, _, err = run(args, self.env)
+            self.assertEqual(code, 1, args)
+            self.assertIn("Error", err)
 
     def test_the_repr_of_the_config_never_shows_the_secret(self):
         self.assertNotIn(KEY, repr(from_env({"ZEN_HERMES_API_KEY": KEY})))

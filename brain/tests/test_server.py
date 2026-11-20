@@ -184,6 +184,79 @@ class RoutingAndLimitsTest(HarnessCase):
         status, _, _ = request(h.port, "GET", "/v1/commands?cursor=abc.%C2%B2", token=t)
         self.assertEqual(status, 200)
 
+    def test_a_failure_to_start_the_connection_thread_does_not_leak_the_slot(self):
+        from http.server import ThreadingHTTPServer
+        from unittest import mock
+
+        h = self.make()
+        slots = h.server._slots
+        taken = []
+        with mock.patch.object(ThreadingHTTPServer, "process_request", side_effect=RuntimeError("can't start new thread")):
+            for _ in range(server.MAX_CONNECTIONS * 2):  # más fallos que ranuras: antes, tras 64 el servidor quedaba muerto
+                client, peer = socket.socketpair()
+                self.addCleanup(client.close)
+                with self.assertRaises(RuntimeError):
+                    h.server.process_request(peer, ("127.0.0.1", 0))
+                peer.close()
+        for _ in range(server.MAX_CONNECTIONS):
+            self.assertTrue(slots.acquire(blocking=False))
+            taken.append(1)
+        for _ in taken:
+            slots.release()
+        self.assertEqual(request(h.port, "GET", "/healthz")[0], 200)
+
+    def test_idle_connections_cost_one_thread_each_not_two(self):
+        import threading
+
+        h = self.make()
+        before = threading.active_count()
+        held = [socket.create_connection(("127.0.0.1", h.port), timeout=5) for _ in range(20)]
+        self.addCleanup(lambda: [s.close() for s in held])
+        time.sleep(0.5)
+        self.assertLessEqual(threading.active_count() - before, 22)  # 20 manejadores (el vigilante es uno solo y ya existía)
+
+    def test_oversized_headers_are_cut_before_authenticating(self):
+        h = self.make()
+        junk = "".join(f"X-Basura-{i}: {'a' * 6000}\r\n" for i in range(6))  # ~36 KB de cabeceras, sin credenciales
+        reply = raw_exchange(h.port, f"GET /healthz HTTP/1.1\r\nHost: x\r\n{junk}\r\n".encode()).split(b"\r\n")[0]
+        self.assertIn(b" 431 ", reply)
+        # Una petición normal (con cabeceras de proxy de tamaño razonable) sigue pasando.
+        extra = "".join(f"X-Forwarded-{i}: {'b' * 200}\r\n" for i in range(5))
+        ok = raw_exchange(h.port, f"GET /healthz HTTP/1.1\r\nHost: x\r\n{extra}\r\n".encode()).split(b"\r\n")[0]
+        self.assertIn(b" 200 ", ok)
+
+    def test_a_giant_request_line_is_cut_without_a_crash(self):
+        h = self.make()
+        raw_exchange(h.port, b"GET /" + b"a" * 40_000 + b" HTTP/1.1\r\n\r\n")
+        self.assertEqual(request(h.port, "GET", "/healthz")[0], 200)
+
+    def test_a_malformed_ipv6_request_target_gets_a_clean_400(self):
+        h = self.make()
+        self.assertIn(b" 400 ", raw_exchange(h.port, b"GET http://[::1/x HTTP/1.0\r\n\r\n").split(b"\r\n")[0])
+
+    def test_healthz_turns_503_when_the_adapter_cannot_act_safely(self):
+        h = self.make()
+        self.assertEqual(request(h.port, "GET", "/healthz")[0], 200)
+        h.tokens._path.write_text("{ roto")  # tokens.json ilegible: nadie puede entrar
+        time.sleep(1.2)
+        status, body, _ = request(h.port, "GET", "/healthz")
+        self.assertEqual((status, body), (503, {"status": "degraded"}))
+        h.tokens._path.write_text("{}")
+        h.tokens._path.write_text(json.dumps({"devices": {}}))
+        time.sleep(1.2)
+        self.assertEqual(request(h.port, "GET", "/healthz")[0], 200)
+        h.audit.ok = False  # la auditoría dejó de poder escribir
+        self.assertEqual(request(h.port, "GET", "/healthz")[0], 503)
+
+    def test_rejected_requests_cannot_flood_the_audit_log(self):
+        h = self.make()
+        for n in range(80):
+            request(h.port, "POST", "/v1/audio", token=h.token["phone"], body=b"basura" * 20, headers={"X-Zen-Segment-Id": f"s{n}"})
+        h.app.flush_auth_failures()
+        lines = [json.loads(l) for l in h.cfg.audit_path.read_text().splitlines()]
+        self.assertLessEqual(sum(1 for l in lines if l["type"] == "audio_rejected"), server.AUDIT_LINES_PER_MINUTE)
+        self.assertEqual([l["count"] for l in lines if l["type"] == "suppressed"], [60])
+
     def test_the_connection_limit_answers_503_instead_of_piling_up(self):
         original = server.MAX_CONNECTIONS
         server.MAX_CONNECTIONS = 2

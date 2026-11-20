@@ -17,11 +17,15 @@ Environment=PYTHONPATH=/opt/zen-brain/adapter
 # Para que `serve` compruebe también los permisos de .env al arrancar.
 Environment=ZEN_ENV_FILE=/opt/zen-brain/.env
 Environment=PYTHONDONTWRITEBYTECODE=1
-# El modelo de Whisper se descarga una vez con `python -m zen_brain fetch-model` (con red); luego se usa sin red.
+# El modelo de Whisper se descarga una vez con `zenctl fetch-model` (con red) a /opt/zen-brain/models; luego se usa sin red.
+# (HF_HOME fuera de /home: con ProtectHome=yes el servicio no vería una caché en el HOME de zen.)
+Environment=HF_HOME=/opt/zen-brain/models
 Environment=HF_HUB_OFFLINE=1
 ExecStart=/opt/zen-brain/venv/bin/python -m zen_brain serve
 Restart=on-failure
 RestartSec=3
+# Código 2 = permisos o configuración mal puestos: reiniciar cada 3 s no lo arregla; hay que mirar el registro.
+RestartPreventExitStatus=2
 TimeoutStopSec=20
 UMask=0077
 
@@ -54,10 +58,11 @@ IPAddressDeny=any
 IPAddressAllow=localhost
 # Solo puede escribir su estado y su auditoría. tokens.json y .env los administra el operador, no el servicio.
 ReadWritePaths=/opt/zen-brain/data /opt/zen-brain/audit
-ReadOnlyPaths=/opt/zen-brain/.env /opt/zen-brain/tokens.json /opt/zen-brain/adapter /opt/zen-brain/venv
+ReadOnlyPaths=/opt/zen-brain/.env /opt/zen-brain/tokens.json /opt/zen-brain/adapter /opt/zen-brain/venv /opt/zen-brain/models
 # Whisper «small» usa ~1 GB; los topes frenan un fallo o un abuso antes de que tumbe al servidor.
 MemoryMax=2G
-TasksMax=64
+# Hilos: 64 conexiones (uno cada una) + trabajadores + vigilante + Whisper (OpenMP) + margen.
+TasksMax=256
 LimitNOFILE=256
 
 [Install]

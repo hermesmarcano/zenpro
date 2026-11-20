@@ -93,8 +93,7 @@ class Brain:
 
     def submit_events(self, device: str, events: list[Event]) -> Submit:
         if events and not self.store.try_consume(device, "events", self.cfg.max_events_per_hour, HOUR_S, cost=len(events)):
-            self._log(type="batch_limited", device=device, events=len(events))
-            return Submit(limited=True)
+            return Submit(limited=True)  # el servidor lo registra (con tope por minuto)
         accepted = duplicates = 0
         for event in events:
             if not self.store.mark_seen(device, event.event_id):
@@ -111,7 +110,6 @@ class Brain:
 
     def submit_audio(self, device: str, segment_id: str, started_ms: int, pcm: bytes) -> Submit:
         if not self.store.try_consume(device, "events", self.cfg.max_events_per_hour, HOUR_S):
-            self._log(type="batch_limited", device=device, events=1)
             return Submit(limited=True)
         event_id = f"a-{segment_id}"
         if not self.store.mark_seen(device, event_id):
@@ -195,7 +193,7 @@ class Brain:
             return done("skipped_sensitive_app")
         if not event.text:
             return done("skipped_empty")
-        if self.monitor.in_cooldown():
+        if self.monitor.in_cooldown(device):
             return done("cooldown")
         failed = self.store.try_consume_all(
             device, [("call_hour", self.cfg.max_calls_per_hour, HOUR_S, 1), ("call_day", self.cfg.max_calls_per_day, DAY_S, 1)]
@@ -217,10 +215,10 @@ class Brain:
             return done("model_error", reason=exc.code)
 
         output = parse_model_output(reply.content, self.cfg)
-        self.monitor.record_model_result(output.valid_json)
+        self.monitor.record_model_result(device, output.valid_json)
         emitted, rejected = self._policy(device, event, output.commands)
         rejected = output.rejected + rejected
-        self.monitor.record_rejections(rejected)
+        self.monitor.record_rejections(device, rejected)
         # Primero el rastro y después el efecto: si no se puede auditar, no se emite nada (nada sin huella).
         logged = self._log(
             **base,
@@ -239,9 +237,9 @@ class Brain:
                 self._log(**base, decision="enqueue_failed", error=type(exc).__name__)
                 return
             if wire["type"] == "block":
-                self.monitor.record_block()
+                self.monitor.record_block(device)
             elif wire["type"] == "pause":
-                self.monitor.record_pause()
+                self.monitor.record_pause(device)
 
     def _policy(self, device: str, event: Event, candidates: list[Candidate]) -> tuple[list[tuple[dict, float]], list[str]]:
         """Reglas que dependen del estado. Devuelve las órdenes ya en el formato del teléfono."""

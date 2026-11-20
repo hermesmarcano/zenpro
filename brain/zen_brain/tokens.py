@@ -64,6 +64,11 @@ class TokenStore:
                 found = label
         return found
 
+    def check(self) -> bool:
+        """¿El archivo de tokens se lee bien? (Para /healthz: roto = nadie puede entrar y hay que enterarse.)"""
+        self._reload()
+        return not self.broken
+
     def _reload(self) -> None:
         now = self._clock()
         with self._lock:

@@ -38,19 +38,21 @@ Supone el servidor ya montado: Hermes con el perfil `zen-brain` escuchando en `1
 `faster-whisper`.
 
 ```bash
-# 1. Código (como root)
-install -d -o zen -g zen -m 750 /opt/zen-brain/adapter
-cp -r brain/zen_brain /opt/zen-brain/adapter/
+# 1. Directorios (como root). /opt/zen-brain debe ser del usuario «zen» (el CLI guarda ahí tokens.json y su candado) y
+#    nadie más puede escribir en él; `serve` se niega a arrancar si no.
+install -d -o zen -g zen -m 750 /opt/zen-brain /opt/zen-brain/models
 install -d -o zen -g zen -m 700 /opt/zen-brain/data /opt/zen-brain/audit
+install -d -o root -g root -m 755 /opt/zen-brain/adapter          # el código lo posee root: el servicio no puede modificarlo
+cp -r brain/zen_brain /opt/zen-brain/adapter/ && chown -R root:root /opt/zen-brain/adapter
 
 # 2. Configuración: copia deploy/env.example a /opt/zen-brain/.env, rellena ZEN_HERMES_API_KEY y ajusta lo demás
 install -o zen -g zen -m 600 brain/deploy/env.example /opt/zen-brain/.env
-chmod 750 /opt/zen-brain && chmod go-w /opt/zen-brain
 
 # 3. Atajo para administrar (carga el .env y ejecuta como «zen»)
 install -m 755 brain/deploy/zenctl /usr/local/bin/zenctl
 
-# 4. Modelo de voz (una vez, con red; luego el servicio funciona sin red)
+# 4. Modelo de voz (una vez, con red; se guarda en /opt/zen-brain/models, fuera de /home porque la unidad usa ProtectHome;
+#    luego el servicio funciona sin red)
 zenctl fetch-model
 
 # 5. Comprobar y dar de alta el teléfono (el token se muestra UNA vez; pégalo en la app y no lo guardes en otro sitio)
@@ -94,13 +96,18 @@ zenctl stats --hours 24      # eventos/min, latencia p50/p95, % no-JSON, % órde
 zenctl check                 # configuración y permisos
 ```
 
-- **Salud**: `GET /healthz` (sin datos). Las métricas salen de `stats`, no de la red.
+- **Salud**: `GET /healthz` (sin datos): 200 si todo va bien y **503 `degraded`** si no puede actuar con seguridad (la auditoría no se
+  puede escribir o `tokens.json` está ilegible; en ambos casos el adaptador deja de emitir órdenes). Las métricas salen de `stats`, no de la red.
 - **Alertas** (líneas `type":"alert"` en `audit.jsonl`): `nonjson_burst`, `block_burst`, `pause_burst`, `rejected_burst`, `hermes_auth`,
   `tokens_broken`. Las cuatro primeras ponen el cortacircuitos (10 min sin consultar al modelo).
 - **Kill switch**: en el teléfono, la pausa de la capa corta **todo** envío y toda petición (no depende del servidor). En el servidor,
   `zenctl tokens revoke <n>` corta ese dispositivo al instante, o `systemctl stop zen-brain-adapter`.
-- **Auditoría**: `/opt/zen-brain/audit/audit.jsonl` (JSON Lines, 600). Rota a 20 MB conservando 5. Con `chattr +a` solo se podrá añadir
-  (la rotación del propio adaptador necesita quitarlo; si lo usas, rota con logrotate).
+- **Auditoría**: `/opt/zen-brain/audit/audit.jsonl` (JSON Lines, 600). Rota a 20 MB conservando 5. El adaptador solo la abre para añadir
+  (`O_APPEND`) y no emite órdenes si no puede escribirla. **No uses `chattr +a` en el archivo activo**: impediría la rotación y el
+  adaptador se quedaría sin auditoría (y, por tanto, sin actuar); si quieres inmutabilidad, envía las líneas a otro sitio. Si el
+  archivo se mueve o borra desde fuera (un logrotate), el adaptador abre uno nuevo en su sitio. Las líneas de peticiones rechazadas
+  tienen un tope por minuto (el resto se cuenta en una línea `suppressed`), para que nadie con un token válido pueda empujar fuera
+  del historial las alertas anteriores.
 
 ## Decisiones respecto al spec original
 
@@ -122,8 +129,12 @@ zenctl check                 # configuración y permisos
 ## Límites conocidos
 
 - **Slowloris sin credenciales**: todo llega desde `127.0.0.1`, así que no se puede limitar por IP. Un cliente de la tailnet sin token solo
-  retiene una ranura 4 s (ventana de cabeceras) y hay 64 ranuras, pero puede mantenerlas ocupadas reabriendo conexiones. Protege el puerto
-  con ACLs de Tailscale.
+  retiene una ranura 4 s (ventana de cabeceras) y solo se le leen 16 KB de cabeceras, pero con 64 ranuras puede mantenerlas ocupadas
+  reabriendo conexiones. Protege el puerto con ACLs de Tailscale.
+- **El cortacircuitos puede usarse para dejar ciego al adaptador**: quien consiga que el modelo emita basura o intentos sospechosos en
+  ráfaga cierra el adaptador para ESE dispositivo 10 min (y esos eventos no se reprocesan). Es el precio de «lo seguro es no actuar».
+- **`seccomp` / Whisper**: `SystemCallFilter=~@resources` y `ProcSubset=pid` no se han podido probar con una transcripción real aquí;
+  si Whisper falla bajo el servicio (línea `stt_error` en la auditoría), relaja ahí primero.
 - **Un evento aceptado y perdido**: la cola de eventos vive en memoria. Si el servicio se reinicia a mitad, los eventos en cola (ya
   respondidos con 200) no se procesan. Es a propósito: nada de contenido se guarda en disco.
 - **Evento descartado por cortacircuitos, error del modelo o tiempo agotado**: queda como visto y **no se reintenta** (no se gasta dos veces).

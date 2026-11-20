@@ -74,3 +74,14 @@ def clean_line(value: object, limit: int) -> str:
         return ""
     value = _neutralize(_strip_invisible(value, keep_newlines=False))
     return _SPACES.sub(" ", value).strip()[:limit].strip()
+
+
+def clean_output_text(value: object, limit: int, *, single_line: bool = False) -> str:
+    """Texto que el MODELO propone para la persona (borrador, aviso). No va a ningún prompt: solo se le quitan los
+    caracteres invisibles o de control. Normalizar con NFKC o cambiar «<»/«>» estropearía el texto legítimo
+    («1º», «10²», «½», «5 > 3»)."""
+    if not isinstance(value, str) or limit <= 0:
+        return ""
+    value = _strip_invisible(value, keep_newlines=not single_line)
+    value = _BLANKS.sub("\n\n", _SPACES.sub(" ", value)).strip()
+    return value[:limit].strip()

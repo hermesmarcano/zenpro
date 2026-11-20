@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
-# Ejecuta `python -m zen_brain <orden>` como el usuario «zen», con /opt/zen-brain/.env cargado.
+# Ejecuta `python -m zen_brain <orden>` como el usuario «zen», con la configuración de /opt/zen-brain/.env.
 # Uso:  zenctl check | tokens add <nombre> | tokens revoke <nombre> | stats | fetch-model
+# El .env lo lee el propio adaptador (sin pasar por el shell): una línea rara no rompe `tokens revoke`.
 set -euo pipefail
-exec sudo -u zen bash -c '
-  set -euo pipefail
-  set -a; . /opt/zen-brain/.env; set +a
-  export PYTHONPATH=/opt/zen-brain/adapter PYTHONDONTWRITEBYTECODE=1 ZEN_ENV_FILE=/opt/zen-brain/.env
-  exec /opt/zen-brain/venv/bin/python -m zen_brain "$@"
-' _ "$@"
+exec sudo -u zen env \
+  PYTHONPATH=/opt/zen-brain/adapter PYTHONDONTWRITEBYTECODE=1 \
+  ZEN_ENV_FILE=/opt/zen-brain/.env HF_HOME=/opt/zen-brain/models \
+  /opt/zen-brain/venv/bin/python -m zen_brain "$@"

@@ -185,6 +185,34 @@ class BrainTest(HarnessCase):
         self.assertTrue(all(t.is_alive() for t in h.brain._threads))
         self.assertEqual(len(self.emitted(h)), 1)  # el segundo evento sí se procesó
 
+    def test_the_circuit_breaker_of_one_phone_does_not_blind_another(self):
+        evil = reply({"type": "block", "app": "com.android.settings", "minutes": 60})
+        h = self.make(hermes=ScriptedHermes(*[evil] * 5, reply(draft())), tokens=("p1", "p2"))
+        status, _, _ = h.post_events(*[event(f"a{i}") for i in range(5)], label="p1")
+        self.assertEqual(status, 200)
+        h.brain.drain()
+        h.post_events(event("b1", conv=CONV), label="p2")
+        h.brain.drain()
+        decisions = {l["event_id"]: l["decision"] for l in h.audit_lines() if l["type"] == "event"}
+        self.assertEqual(decisions["b1"], "processed")  # el otro teléfono sigue atendido
+        alerts = [l for l in h.audit_lines() if l["type"] == "alert"]
+        self.assertEqual([(a["code"], a["device"]) for a in alerts], [("rejected_burst", "p1")])
+
+    def test_a_breaker_that_is_already_open_is_not_extended_or_repeated(self):
+        from zen_brain.monitor import Monitor
+
+        clock = {"t": 1000.0}
+        h = self.make()
+        monitor = Monitor(h.audit, lambda: clock["t"], cooldown_s=600)
+        for _ in range(10):
+            monitor.record_model_result("p", False)
+        clock["t"] += 300
+        for _ in range(10):
+            monitor.record_model_result("p", False)  # sigue mal, pero ya estaba abierto: no se alarga
+        self.assertEqual(sum(1 for l in h.audit_lines() if l["type"] == "alert"), 1)
+        clock["t"] += 301  # 601 s desde la primera: se cierra
+        self.assertFalse(monitor.in_cooldown("p"))
+
     def test_hourly_and_daily_budgets(self):
         h = self.make(hermes=ScriptedHermes(), max_calls_per_hour=2)
         self.run_events(h, event("e1"), event("e2"), event("e3"))

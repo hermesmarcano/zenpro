@@ -30,6 +30,7 @@ class Audit:
         self._lock = threading.Lock()
         self._fd = -1
         self._warned = False
+        self.ok = True  # ¿la última escritura se pudo hacer? /healthz lo refleja
         path.parent.mkdir(parents=True, exist_ok=True)
         self._fd = self._open()
 
@@ -45,16 +46,42 @@ class Audit:
             line = (json.dumps(entry, ensure_ascii=True, separators=(",", ":"), default=str) + "\n").encode("ascii")
             with self._lock:
                 self._follow_the_file()
-                if os.fstat(self._fd).st_size + len(line) > MAX_BYTES:
+                size = os.fstat(self._fd).st_size
+                if size + len(line) > MAX_BYTES:
                     self._rotate()
-                os.write(self._fd, line)
+                    size = 0
+                self._write_all(line, size)
             self._warned = False
+            self.ok = True
             return True
         except Exception as exc:  # noqa: BLE001 — la auditoría jamás debe tumbar al llamador
+            self.ok = False
             if not self._warned:
                 self._warned = True
-                print(f"zen-brain: auditoría no disponible ({type(exc).__name__})", file=sys.stderr, flush=True)
+                try:
+                    print(f"zen-brain: auditoría no disponible ({type(exc).__name__})", file=sys.stderr, flush=True)
+                except Exception:  # noqa: BLE001 — ni un stderr roto debe hacer que `log` lance
+                    pass
             return False
+
+    def _write_all(self, line: bytes, size_before: int) -> None:
+        """Escribe la línea ENTERA o nada: una escritura corta (disco lleno, cuota) dejaría media línea y la siguiente
+        entrada se pegaría a ella; si falla a medias se recorta el archivo a como estaba."""
+        view = memoryview(line)
+        written = 0
+        try:
+            while written < len(line):
+                count = os.write(self._fd, view[written:])
+                if count <= 0:
+                    raise OSError("escritura sin progreso")
+                written += count
+        except BaseException:
+            if written:
+                try:
+                    os.ftruncate(self._fd, size_before)
+                except OSError:
+                    pass
+            raise
 
     def _follow_the_file(self) -> None:
         """Si alguien movió o borró el archivo (logrotate, un `mv`), se abre uno nuevo en su sitio en vez de seguir escribiendo
@@ -86,5 +113,8 @@ class Audit:
     def close(self) -> None:
         with self._lock:
             if self._fd >= 0:
-                os.close(self._fd)
+                try:
+                    os.close(self._fd)
+                except OSError:
+                    pass  # un descriptor ya inválido no debe impedir cerrar el resto
                 self._fd = -1
