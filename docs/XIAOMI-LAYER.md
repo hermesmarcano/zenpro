@@ -76,6 +76,11 @@ Los nombres exactos de los menús cambian entre versiones de MIUI; si alguno no 
      app, elige conservarla («Manter»).
    - **Instalar por cable con `adb`** (no es una descarga de internet): con *Depuración USB* e *Instalar vía USB* activados en Opciones de
      desarrollador, `adb install -r zen-xiaomi.apk`. Es lo más probable que funcione sin tocar Play Protect, pero no está confirmado por Google.
+   **Brasil, Indonesia, Singapur y Tailandia además exigen desde el 30-sep-2026 que las apps vengan de un desarrollador registrado**
+   (verificación de desarrolladores de Google). Una app personal como esta no lo está: ahí la salida oficial es el «flujo avanzado»
+   (Opciones de desarrollador, con reinicio y espera de unas 24 h; solo en versiones de Android que lo traen, que el Redmi Note 8 con
+   Android 11 probablemente no) o **`adb`, que Google deja exento**. Si Play Protect no te deja o el interruptor no se queda apagado,
+   `adb` es el camino fiable, y de todas formas lo vas a necesitar para el paso 7 (`WRITE_SECURE_SETTINGS`).
    Con Android 13 o superior, además, hay que abrir *Información de la app → ⋮ → Permitir ajustes restringidos* antes de poder activar la
    accesibilidad y el acceso a notificaciones (el Redmi Note 8 con Android 11 no lo necesita).
 2. Abre **ZEN Xiaomi** → **Ajustes → Abrir la capa**. Ahí, arriba, la sección **Estado** te dice qué falta y tiene un botón para cada cosa.
