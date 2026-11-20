@@ -51,7 +51,7 @@ de ZEN que se publicará, y por eso están separadas de arriba abajo:
    contraseñas etiquetadas y claves (`sk-…`, `ghp_…`, JWT…) *antes* de escribir en disco o enviar. El título y el
    cuerpo de una notificación se revisan **juntos**: un «Código de verificación» en el título oculta el número del cuerpo.
 4. **El cerebro puede restringir, nunca relajar**: puede proponer una respuesta, bloquear una app (máx. 24 h),
-   pausar la observación o avisar. No puede quitar un bloqueo ni enviar un mensaje. Y aun así está acotado: **solo bloquea apps
+   pausar la observación, avisar o proponer un evento de calendario. No puede quitar un bloqueo, enviar un mensaje ni agendar nada por sí solo. Y aun así está acotado: **solo bloquea apps
    que tú ya pusiste bajo una regla que bloquea en «Límites»** (un límite que bloquea al llegar, o una franja prohibida; una regla que
    solo avisa no vale, y sin regla no toca la app), con un máximo de 3 bloqueos, 6 avisos y 10 borradores por hora.
 5. **Los compromisos tienen fricción**: endurecer un límite vale al instante; **aflojarlo o quitarlo tarda 24 h**.
@@ -144,12 +144,17 @@ Cuerpo `audio/wav` (16 kHz, 16 bits, mono, **como mucho 29 s**: el servidor rech
   {"id": "c1", "type": "draft_reply", "conversation": "com.whatsapp|0|…", "text": "Claro, a las 9"},
   {"id": "c2", "type": "block", "package": "com.zhiliaoapp.musically", "minutes": 60},
   {"id": "c3", "type": "notify", "title": "ZEN", "text": "Llevas 1 h en TikTok"},
-  {"id": "c4", "type": "pause", "minutes": 30}
+  {"id": "c4", "type": "pause", "minutes": 30},
+  {"id": "c5", "type": "calendar_event", "title": "Cena con Marta", "start": 1763500000000, "end": 1763505400000, "from": "Marta"}
 ]}
 ```
 
 - `id` es obligatorio y se usa para **no ejecutar dos veces** la misma orden (la capa recuerda los últimos 500).
 - `draft_reply` crea un **borrador pendiente** (notificación con «Enviar / Descartar»); nunca envía.
+- `calendar_event` es una **propuesta de evento** (`start`/`end` en ms desde 1970; título ≤ 100 caracteres y sin enlaces; duración ≤ 12 h;
+  que empiece entre hace 1 h y dentro de ~13 meses). **No agenda nada**: llega una notificación «Agendar: …» y, al tocarla, se abre tu
+  calendario con el evento ya relleno (`ACTION_INSERT`); lo guardas tú. Por eso la app **no pide ningún permiso del calendario** (no lo lee
+  ni lo escribe; un test veta `READ_CALENDAR`/`WRITE_CALENDAR`). `from` lo pone el servidor (quién lo escribió). Máximo 10 propuestas por hora.
 - `block`: 1–1440 minutos; se ignora para apps protegidas **y para toda app que no tenga una regla que bloquee en «Límites»**. `pause`: 1–1440
   minutos. `notify`: título de hasta 60 y texto de hasta 200 caracteres, **sin enlaces** (esquemas, `www.`, dominios, IP: se rechaza).
 - Límites de la propia app, aunque el servidor falle: 6 avisos, 3 bloqueos y 10 borradores del cerebro por hora.

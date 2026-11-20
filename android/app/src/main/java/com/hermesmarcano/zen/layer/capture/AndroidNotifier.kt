@@ -7,11 +7,13 @@ import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.provider.CalendarContract
 import android.content.pm.PackageManager
 import android.net.Uri
 import androidx.core.app.NotificationCompat
 import com.hermesmarcano.zen.R
 import com.hermesmarcano.zen.layer.core.BlockEntry
+import com.hermesmarcano.zen.layer.core.BrainCommand
 import com.hermesmarcano.zen.layer.core.BlockReason
 import com.hermesmarcano.zen.layer.core.Draft
 import com.hermesmarcano.zen.layer.core.DraftBoard
@@ -63,6 +65,39 @@ class AndroidNotifier(private val context: Context) : Notifier {
             .addAction(0, "Enviar", action(LayerActionReceiver.ACTION_APPROVE_DRAFT, LayerActionReceiver.EXTRA_ID, draft.id))
             .addAction(0, "Descartar", action(LayerActionReceiver.ACTION_DISCARD_DRAFT, LayerActionReceiver.EXTRA_ID, draft.id))
         post(draftNotificationId(draft.id), builder.build())
+    }
+
+    /**
+     * «Agendar»: al tocar la notificación (o su botón) se abre el calendario del teléfono con el evento relleno; el usuario lo
+     * guarda. El `PendingIntent` abre la actividad DIRECTAMENTE (sin receptor intermedio: Android 12+ lo prohíbe) y la app no pide
+     * ningún permiso sobre el calendario. Si no hay calendario que lo atienda, no pasa nada.
+     */
+    override fun calendarProposal(event: BrainCommand.CalendarEvent) {
+        val insert = Intent(Intent.ACTION_INSERT)
+            .setData(CalendarContract.Events.CONTENT_URI)
+            .putExtra(CalendarContract.Events.TITLE, event.title)
+            .putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, event.startMs)
+            .putExtra(CalendarContract.EXTRA_EVENT_END_TIME, event.endMs)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val open = PendingIntent.getActivity(
+            context, ID_PROPOSAL_BASE + (event.id.hashCode() and 0xFFFF), insert, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        val whenText = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(event.startMs))
+        val text = if (event.from.isBlank()) whenText else "$whenText · ${event.from}"
+        val builder = NotificationCompat.Builder(context, CHANNEL_ALERTS)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle("Agendar: ${event.title}")
+            .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+            .setCategory(NotificationCompat.CATEGORY_EVENT)
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setPublicVersion(alert("ZEN", "Hay una propuesta de evento para tu calendario.").build())
+            .setContentIntent(open)
+            .setAutoCancel(true)
+            .setOnlyAlertOnce(true)
+            .setTimeoutAfter(PROPOSAL_TTL_MS)
+            .addAction(0, "Agendar", open)
+        post(ID_PROPOSAL_BASE + (event.id.hashCode() and 0xFFFF), builder.build())
     }
 
     override fun nudge(nudge: LimitDecision.Nudge) {
@@ -157,6 +192,8 @@ class AndroidNotifier(private val context: Context) : Notifier {
         private const val ID_NUDGE_BASE = 4000
         private const val ID_BLOCK_BASE = 8000
         private const val ID_DRAFT_BASE = 12000
+        private const val ID_PROPOSAL_BASE = 80000
+        private const val PROPOSAL_TTL_MS = 24L * 60 * 60 * 1000
         private const val REQUEST_OPEN = 77
 
         fun draftNotificationId(draftId: String): Int = ID_DRAFT_BASE + (draftId.hashCode() and 0xFFFF)

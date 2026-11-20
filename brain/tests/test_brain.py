@@ -85,6 +85,74 @@ class BrainTest(HarnessCase):
         self.assertEqual(len(h.hermes.calls), 3)  # el cuarto ya no consultó al modelo
         self.assertIn(("e4", "cooldown"), self.decisions(h))
 
+    # ---- calendario -------------------------------------------------------------------------------------------
+
+    def local_start(self, tz="UTC", days=1, hour=21):
+        from datetime import datetime, timedelta
+        from zoneinfo import ZoneInfo
+
+        when = (datetime.now(ZoneInfo(tz)) + timedelta(days=days)).replace(hour=hour, minute=0, second=0, microsecond=0)
+        return when, when.strftime("%Y-%m-%dT%H:%M")
+
+    def proposal(self, start, minutes=90, title="Cena con Marta"):
+        return {"type": "calendar_event", "title": title, "start": start, "minutes": minutes}
+
+    def test_a_calendar_proposal_is_converted_to_epoch_in_the_users_timezone(self):
+        when, local = self.local_start("America/Sao_Paulo")
+        h = self.make(hermes=ScriptedHermes(reply(self.proposal(local))), timezone="America/Sao_Paulo")
+        self.run_events(h, event("e1", text="cenamos mañana a las 9, ¿va?"))
+        (cmd,) = self.emitted(h)
+        self.assertEqual((cmd["type"], cmd["title"], cmd["from"]), ("calendar_event", "Cena con Marta", "Marta"))
+        self.assertEqual(cmd["start"], int(when.timestamp()) * 1000)  # «21:00 de Sao Paulo», no «21:00 UTC»
+        self.assertEqual(cmd["end"] - cmd["start"], 90 * 60_000)
+        self.assertEqual(set(cmd), {"id", "type", "title", "start", "end", "from"})
+
+    def test_the_model_is_told_the_current_local_time_and_zone_outside_the_event_tags(self):
+        h = self.make(hermes=ScriptedHermes(), timezone="America/Sao_Paulo")
+        self.run_events(h, event("e1", text="mañana a las 9"))
+        user = h.hermes.calls[0]["user"]
+        self.assertRegex(user, r"^ahora: \d{4}-\d{2}-\d{2}T\d{2}:\d{2} \([a-zé]+, America/Sao_Paulo\)\n<EVENTO")
+        self.assertIn('"calendar_event"', h.hermes.calls[0]["system"])
+
+    def test_dates_outside_the_window_are_refused(self):
+        from datetime import datetime, timedelta, timezone
+
+        past = (datetime.now(timezone.utc) - timedelta(days=2)).strftime("%Y-%m-%dT%H:%M")
+        far = (datetime.now(timezone.utc) + timedelta(days=400)).strftime("%Y-%m-%dT%H:%M")
+        h = self.make(hermes=ScriptedHermes(reply(self.proposal(past)), reply(self.proposal(far))))
+        self.run_events(h, event("e1"), event("e2"))
+        self.assertEqual(self.emitted(h), [])
+        self.assertEqual([r for l in h.audit_lines() for r in (l.get("rejected") or [])].count("date_out_of_range"), 2)
+
+    def test_the_proposals_are_rate_limited_per_hour(self):
+        _, local = self.local_start()
+        h = self.make(hermes=ScriptedHermes(*[reply(self.proposal(local, title=f"Cita {i}")) for i in range(4)]), max_calendar_per_hour=2)
+        self.run_events(h, *[event(f"e{i}") for i in range(4)])
+        self.assertEqual(len(self.emitted(h)), 2)
+
+    def test_the_origin_of_a_voice_proposal_is_the_microphone_and_the_model_cannot_choose_it(self):
+        class Fixed:
+            def transcribe(self, pcm):
+                return "quedé con Sandra el viernes a las 9"
+
+        _, local = self.local_start()
+        cmd = {**self.proposal(local), "from": "El banco"}  # el modelo intenta poner el origen: campo extra → se rechaza
+        h = self.make(hermes=ScriptedHermes(reply(cmd), reply(self.proposal(local))), transcriber=Fixed())
+        request(h.port, "POST", "/v1/audio", token=h.token["phone"], body=wav(1.0), headers={"X-Zen-Segment-Id": "s1"})
+        h.brain.drain()
+        self.assertEqual(self.emitted(h), [])
+        request(h.port, "POST", "/v1/audio", token=h.token["phone"], body=wav(1.0), headers={"X-Zen-Segment-Id": "s2"})
+        h.brain.drain()
+        (c,) = self.emitted(h)
+        self.assertEqual(c["from"], "micrófono")
+
+    def test_with_the_calendar_off_the_prompt_does_not_offer_it_and_proposals_are_refused(self):
+        _, local = self.local_start()
+        h = self.make(hermes=ScriptedHermes(reply(self.proposal(local))), calendar=False)
+        self.run_events(h, event("e1"))
+        self.assertNotIn("calendar_event", h.hermes.calls[0]["system"])
+        self.assertEqual(self.emitted(h), [])
+
     # ---- avisos y pausas --------------------------------------------------------------------------------------
 
     def test_notify_title_is_fixed_and_rate_limited(self):

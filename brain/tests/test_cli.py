@@ -55,6 +55,15 @@ class ConfigTest(unittest.TestCase):
             with self.assertRaises(ConfigError, msg=str(env)):
                 from_env(env)
 
+    def test_timezone_and_calendar_settings(self):
+        cfg = from_env({"ZEN_HERMES_API_KEY": KEY})
+        self.assertEqual((cfg.timezone, cfg.calendar, cfg.max_calendar_per_hour), ("UTC", True, 6))
+        cfg = from_env({"ZEN_HERMES_API_KEY": KEY, "ZEN_TIMEZONE": "America/Sao_Paulo", "ZEN_CALENDAR": "off", "ZEN_MAX_CALENDAR_PER_HOUR": "2"})
+        self.assertEqual((cfg.timezone, cfg.calendar, cfg.max_calendar_per_hour), ("America/Sao_Paulo", False, 2))
+        for bad in ({"ZEN_TIMEZONE": "Marte/Olimpo"}, {"ZEN_TIMEZONE": "../../etc/passwd"}, {"ZEN_CALENDAR": "quizás"}, {"ZEN_MAX_CALENDAR_PER_HOUR": "99"}):
+            with self.assertRaises(ConfigError, msg=str(bad)):
+                from_env({"ZEN_HERMES_API_KEY": KEY, **bad})
+
     def test_a_valid_override(self):
         cfg = from_env({"ZEN_HERMES_API_KEY": KEY, "ZEN_BLOCK_ALLOWLIST": "com.zhiliaoapp.musically, com.instagram.android",
                         "ZEN_MODEL_KINDS": "notification,screen", "ZEN_STT": "off", "ZEN_PORT": "9000"})

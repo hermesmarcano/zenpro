@@ -65,6 +65,7 @@ object EventJson {
                 "block" -> BrainCommand.Block(id, o.optString("package", ""), o.optInt("minutes", 0))
                 "notify" -> BrainCommand.Notify(id, o.optString("title", ""), o.optString("text", ""))
                 "pause" -> BrainCommand.Pause(id, o.optInt("minutes", 0))
+                "calendar_event" -> BrainCommand.CalendarEvent(id, o.optString("title", ""), o.optLong("start", 0L), o.optLong("end", 0L), o.optString("from", ""))
                 else -> null
             }
             if (command != null) commands += command

@@ -101,6 +101,9 @@ a la app normal ni se publicarán en App Store / Google Play. Por eso:
   - En el servidor, el adaptador es la única frontera: valida con esquema estricto lo que dice el modelo, fija él el destino de un borrador,
     no escribe texto de usuario ni del modelo en la auditoría y no emite nada si no puede auditar. `ZEN_PHONE_TOKEN` no existe (no se podía revocar).
   - Todo texto observado que llegue a un prompt va saneado y entre etiquetas con identificador aleatorio; nunca en el prompt de sistema.
+  - El cerebro **propone** acciones sobre el teléfono, no las ejecuta: un evento de calendario es una notificación que abre el calendario con
+    el evento relleno (`ACTION_INSERT`) y lo guarda el usuario; la app no pide `READ_CALENDAR`/`WRITE_CALENDAR` (un test los veta). Una acción
+    nueva sigue el mismo patrón: orden validada por el adaptador y por `CommandPolicy`, tope por hora, y un toque del usuario para ejecutarla.
 - Esta regla vive en la rama de la variante; `main` solo la tendrá si su dueño la añade allí.
 
 ## Android (carpeta `android/`)

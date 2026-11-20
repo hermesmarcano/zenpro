@@ -18,6 +18,8 @@ interface ReplySender {
 interface Notifier {
     fun notice(title: String, text: String)
     fun draftReady(draft: Draft)
+    /** Una propuesta de evento para el calendario: una notificación que, al tocarla, abre el calendario con el evento relleno. */
+    fun calendarProposal(event: BrainCommand.CalendarEvent)
     fun nudge(nudge: LimitDecision.Nudge)
     fun blocked(entry: BlockEntry)
     fun needsAttention(title: String, text: String)
@@ -115,6 +117,7 @@ class CommandApplier(
     private val notices = RateWindow(NOTICES_PER_HOUR, HOUR_MS)
     private val brainBlocks = RateWindow(BLOCKS_PER_HOUR, HOUR_MS)
     private val brainDrafts = RateWindow(DRAFTS_PER_HOUR, HOUR_MS) // cada borrador es una notificación nueva con su texto
+    private val proposals = RateWindow(PROPOSALS_PER_HOUR, HOUR_MS)
 
     fun apply(command: BrainCommand): Outcome {
         // Solo cuentan las reglas que BLOQUEAN (límite que bloquea al llegar, o franja prohibida): una regla «solo avisa» no da permiso.
@@ -133,6 +136,10 @@ class CommandApplier(
         val now = clock()
         if (command is BrainCommand.Notify && !notices.tryAcquire(now)) return Outcome.REJECTED
         if (command is BrainCommand.DraftReply && !brainDrafts.tryAcquire(now)) return Outcome.REJECTED
+        if (command is BrainCommand.CalendarEvent) {
+            val inWindow = command.startMs in (now - CommandPolicy.EVENT_PAST_MS)..(now + CommandPolicy.EVENT_FUTURE_MS)
+            if (!inWindow || !proposals.tryAcquire(now)) return Outcome.REJECTED
+        }
         if (command is BrainCommand.Block && !brainBlocks.tryAcquire(now)) return Outcome.REJECTED
         // Una escritura fallida dentro de una orden no debe tumbar la sincronización entera.
         try {
@@ -152,6 +159,7 @@ class CommandApplier(
                     }
                 }
                 is BrainCommand.Notify -> notifier.notice(command.title.ifBlank { "ZEN" }, command.text)
+                is BrainCommand.CalendarEvent -> notifier.calendarProposal(command)
                 is BrainCommand.Pause -> {
                     val until = now + command.minutes * 60_000L
                     state.update { it.copy(capture = it.capture.copy(pausedUntilMs = maxOf(it.capture.pausedUntilMs, until))) }
@@ -167,6 +175,7 @@ class CommandApplier(
         const val NOTICES_PER_HOUR = 6
         const val BLOCKS_PER_HOUR = 3
         const val DRAFTS_PER_HOUR = 10
+        const val PROPOSALS_PER_HOUR = 10
         const val HOUR_MS = 60 * 60_000L
     }
 }

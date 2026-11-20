@@ -23,7 +23,9 @@ internal class RecordingNotifier : Notifier {
     val nudges = ArrayList<LimitDecision.Nudge>()
     val blocked = ArrayList<BlockEntry>()
     val attention = ArrayList<Pair<String, String>>()
+    val proposals = ArrayList<BrainCommand.CalendarEvent>()
     override fun notice(title: String, text: String) { notices += title to text }
+    override fun calendarProposal(event: BrainCommand.CalendarEvent) { proposals += event }
     override fun draftReady(draft: Draft) { drafts += draft }
     override fun nudge(nudge: LimitDecision.Nudge) { nudges += nudge }
     override fun blocked(entry: BlockEntry) { blocked += entry }

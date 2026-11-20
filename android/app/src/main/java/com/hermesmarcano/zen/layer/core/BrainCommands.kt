@@ -13,6 +13,12 @@ sealed interface BrainCommand {
     data class Block(override val id: String, val pkg: String, val minutes: Int) : BrainCommand
     data class Notify(override val id: String, val title: String, val text: String) : BrainCommand
     data class Pause(override val id: String, val minutes: Int) : BrainCommand
+
+    /**
+     * Una PROPUESTA de evento para el calendario (hora en ms desde 1970). No agenda nada: la persona ve una notificación y, al
+     * tocarla, se abre su calendario con el evento relleno; lo guarda ella. [from] lo pone el servidor (quién lo escribió).
+     */
+    data class CalendarEvent(override val id: String, val title: String, val startMs: Long, val endMs: Long, val from: String) : BrainCommand
 }
 
 object CommandPolicy {
@@ -21,6 +27,12 @@ object CommandPolicy {
     const val MAX_NOTIFY_CHARS = 200
     const val MAX_NOTIFY_TITLE_CHARS = 60
     const val REMEMBER_IDS = 500
+    const val MAX_EVENT_TITLE_CHARS = 100
+    const val MAX_EVENT_FROM_CHARS = 60
+    const val MAX_EVENT_MS = 12L * 60 * 60 * 1000
+    /** Un evento propuesto debe empezar entre hace una hora y dentro de ~13 meses: lo demás es un error (o una trampa). */
+    const val EVENT_PAST_MS = 60L * 60 * 1000
+    const val EVENT_FUTURE_MS = 400L * 24 * 60 * 60 * 1000
 
     enum class Verdict { ACCEPT, DUPLICATE, INVALID, PROTECTED, NOT_ALLOWED, LINK }
 
@@ -66,6 +78,12 @@ object CommandPolicy {
             }
             is BrainCommand.Pause ->
                 if (command.minutes !in 1..MAX_PAUSE_MINUTES) Verdict.INVALID else Verdict.ACCEPT
+            is BrainCommand.CalendarEvent -> when {
+                command.title.isBlank() || command.title.length > MAX_EVENT_TITLE_CHARS || command.from.length > MAX_EVENT_FROM_CHARS -> Verdict.INVALID
+                command.startMs <= 0 || command.endMs <= command.startMs || command.endMs - command.startMs > MAX_EVENT_MS -> Verdict.INVALID
+                hasLink(command.title) -> Verdict.LINK
+                else -> Verdict.ACCEPT
+            }
         }
     }
 

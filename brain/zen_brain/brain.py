@@ -13,14 +13,16 @@ import secrets
 import threading
 import time
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Callable
+from zoneinfo import ZoneInfo
 
 from . import protected
 from .audit import Audit
 from .config import Config
 from .hermes import HermesClient, HermesError
 from .monitor import Monitor
-from .prompt import new_boundary, system_prompt, user_message
+from .prompt import new_boundary, now_line, system_prompt, user_message
 from .protocol import Event
 from .store import Store
 from .stt import Transcriber
@@ -29,7 +31,10 @@ from .validate import Candidate, parse_model_output
 HOUR_S = 3600.0
 DAY_S = 86400.0
 # Una orden que el teléfono recoge tarde ya no tiene sentido: caduca en el servidor.
-TTL_S = {"draft_reply": 1800.0, "notify": 1800.0, "block": 600.0, "pause": 600.0}
+TTL_S = {"draft_reply": 1800.0, "notify": 1800.0, "block": 600.0, "pause": 600.0, "calendar_event": 24 * 3600.0}
+# Un evento propuesto debe empezar entre hace unos minutos y dentro de un año: lo demás es un error del modelo (o una trampa).
+EVENT_PAST_S = 10 * 60
+EVENT_FUTURE_S = 366 * 24 * 3600
 
 
 @dataclass(frozen=True)
@@ -69,6 +74,7 @@ class Brain:
         self.transcriber = transcriber
         self.monitor = monitor
         self._system = system_prompt(cfg)
+        self._tz = ZoneInfo(cfg.timezone)
         self._events: queue.Queue[Job | None] = queue.Queue(maxsize=cfg.queue_max)
         self._audio: queue.Queue[Job | None] = queue.Queue(maxsize=cfg.audio_queue_max)
         self._threads: list[threading.Thread] = []
@@ -205,7 +211,7 @@ class Brain:
         try:
             reply = self.hermes.complete(
                 self._system,
-                user_message(event, new_boundary()),
+                user_message(event, new_boundary(), now_line(datetime.now(self._tz), self.cfg.timezone)),
                 idempotency_key=f"zen-{device}-{event.event_id}",
                 session_id=session,
             )
@@ -240,6 +246,13 @@ class Brain:
                 self.monitor.record_block(device)
             elif wire["type"] == "pause":
                 self.monitor.record_pause(device)
+
+    def _epoch(self, local: str) -> float | None:
+        """«AAAA-MM-DDTHH:MM» en la zona de la persona → segundos desde 1970 (None si no es una fecha real)."""
+        try:
+            return datetime.strptime(local, "%Y-%m-%dT%H:%M").replace(tzinfo=self._tz).timestamp()
+        except (ValueError, OverflowError, OSError):
+            return None
 
     def _policy(self, device: str, event: Event, candidates: list[Candidate]) -> tuple[list[tuple[dict, float]], list[str]]:
         """Reglas que dependen del estado. Devuelve las órdenes ya en el formato del teléfono."""
@@ -276,6 +289,19 @@ class Brain:
                     rejected.append("rate_limited" if failed == "block" else "budget")
                     continue
                 wire = {"type": "block", "package": c.app, "minutes": c.minutes}
+            elif c.type == "calendar_event":
+                start_s = self._epoch(c.start)
+                now_s = time.time()
+                if start_s is None or not now_s - EVENT_PAST_S <= start_s <= now_s + EVENT_FUTURE_S:
+                    rejected.append("date_out_of_range")
+                    continue
+                if not store.try_consume(device, "calendar", cfg.max_calendar_per_hour, HOUR_S):
+                    rejected.append("rate_limited")
+                    continue
+                # «from» lo fija el adaptador (quién lo escribió), nunca el modelo: la persona ve de dónde sale la propuesta.
+                origin = event.sender or ("micrófono" if event.kind == "transcript" else "")
+                wire = {"type": "calendar_event", "title": c.text, "start": int(start_s * 1000),
+                        "end": int((start_s + c.minutes * 60) * 1000), "from": origin[:60]}
             else:  # pause
                 failed = store.try_consume_all(
                     device, [("pause", cfg.max_pauses_per_hour, HOUR_S, 1), ("pause_minutes", cfg.pause_minutes_per_day, DAY_S, c.minutes)]

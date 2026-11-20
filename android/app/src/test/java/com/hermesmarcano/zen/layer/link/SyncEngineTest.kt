@@ -73,6 +73,7 @@ private class QuietNotifier : Notifier {
     val notices = ArrayList<String>()
     override fun notice(title: String, text: String) { notices += title }
     override fun draftReady(draft: Draft) {}
+    override fun calendarProposal(event: BrainCommand.CalendarEvent) {}
     override fun nudge(nudge: LimitDecision.Nudge) {}
     override fun blocked(entry: BlockEntry) {}
     override fun needsAttention(title: String, text: String) {}

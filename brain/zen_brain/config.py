@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Mapping
 from urllib.parse import urlsplit
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from . import protected
 
@@ -38,6 +39,10 @@ class Config:
     block_allowlist: frozenset[str] = frozenset()
     block_max_minutes: int = 240
     pause_max_minutes: int = 120
+    # Propuestas de evento para el calendario (la persona las confirma en su calendario; nunca se agenda solo).
+    calendar: bool = True
+    timezone: str = "UTC"  # la hora LOCAL de la persona: el modelo da «mañana a las 9» y el adaptador lo convierte
+    max_calendar_per_hour: int = 6
     # Tope acumulado en 24 h: aunque las órdenes se repitan, no se encadenan bloqueos o pausas sin fin.
     block_minutes_per_day: int = 240
     pause_minutes_per_day: int = 120
@@ -133,6 +138,15 @@ def from_env(env: Mapping[str, str], *, require_hermes_key: bool = True) -> Conf
     if mode not in ("event", "device"):
         raise ConfigError("ZEN_SESSION_MODE debe ser event o device")
 
+    calendar = (env.get("ZEN_CALENDAR") or "on").strip().lower()
+    if calendar not in ("on", "off"):
+        raise ConfigError("ZEN_CALENDAR debe ser on u off")
+    tz = (env.get("ZEN_TIMEZONE") or base.timezone).strip()
+    try:
+        ZoneInfo(tz)
+    except (ZoneInfoNotFoundError, ValueError):
+        raise ConfigError("ZEN_TIMEZONE no es una zona horaria conocida (p. ej. America/Sao_Paulo)") from None
+
     stt = (env.get("ZEN_STT") or "whisper").strip().lower()
     if stt not in ("whisper", "off"):
         raise ConfigError("ZEN_STT debe ser whisper u off")
@@ -150,6 +164,9 @@ def from_env(env: Mapping[str, str], *, require_hermes_key: bool = True) -> Conf
         block_allowlist=frozenset(allowlist),
         block_max_minutes=_int(env, "ZEN_BLOCK_MAX_MINUTES", base.block_max_minutes, 1, 1440),
         pause_max_minutes=_int(env, "ZEN_PAUSE_MAX_MINUTES", base.pause_max_minutes, 1, 1440),
+        calendar=calendar == "on",
+        timezone=tz,
+        max_calendar_per_hour=_int(env, "ZEN_MAX_CALENDAR_PER_HOUR", base.max_calendar_per_hour, 0, 50),
         block_minutes_per_day=_int(env, "ZEN_BLOCK_MINUTES_PER_DAY", base.block_minutes_per_day, 1, 1440),
         pause_minutes_per_day=_int(env, "ZEN_PAUSE_MINUTES_PER_DAY", base.pause_minutes_per_day, 1, 1440),
         model_kinds=kinds,

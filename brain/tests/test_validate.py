@@ -96,6 +96,46 @@ class CommandSchemaTest(unittest.TestCase):
         self.assertEqual(out([{"type": "draft_reply", "text": 5}]).rejected, ["empty_text"])
 
 
+class CalendarEventSchemaTest(unittest.TestCase):
+    def ok(self, **over):
+        cmd = {"type": "calendar_event", "title": "Cena con Marta", "start": "2026-11-21T21:00", "minutes": 90}
+        cmd.update(over)
+        return out([cmd])
+
+    def test_a_well_formed_proposal_is_accepted(self):
+        (c,) = self.ok().commands
+        self.assertEqual((c.type, c.text, c.start, c.minutes), ("calendar_event", "Cena con Marta", "2026-11-21T21:00", 90))
+
+    def test_the_duration_is_clamped_into_five_minutes_to_twelve_hours(self):
+        self.assertEqual(self.ok(minutes=1).commands[0].minutes, 5)
+        self.assertEqual(self.ok(minutes=99999).commands[0].minutes, 720)
+
+    def test_the_start_must_be_a_real_local_datetime_without_zone_or_seconds(self):
+        for bad in ("2026-11-21", "2026-11-21T21:00:00", "2026-11-21T21:00Z", "2026-11-21T21:00+02:00", "mañana a las 9",
+                    "2026-02-30T10:00", "2026-13-01T10:00", "2026-11-21T25:00", "2026-11-21 21:00", 5, None, ["2026-11-21T21:00"]):
+            result = self.ok(start=bad)
+            self.assertEqual((result.commands, result.rejected), ([], ["bad_start"]), bad)
+
+    def test_title_is_short_single_line_without_links_and_not_empty(self):
+        self.assertEqual(self.ok(title="a" * 300).commands[0].text, "a" * 100)
+        self.assertEqual(self.ok(title="Cena\ncon Marta").commands[0].text, "Cena con Marta")
+        self.assertEqual(self.ok(title="Mira https://malo.example/x").rejected, ["url_in_title"])
+        self.assertEqual(self.ok(title="Reunión en malo.com").rejected, ["url_in_title"])
+        self.assertEqual(self.ok(title="   ").rejected, ["empty_text"])
+        self.assertEqual(self.ok(title=5).rejected, ["empty_text"])
+
+    def test_minutes_must_be_an_integer_and_extra_keys_are_refused(self):
+        for bad in ("60", 1.5, 60.0, True, None):
+            self.assertEqual(self.ok(minutes=bad).rejected, ["bad_minutes"], bad)
+        self.assertEqual(out([{"type": "calendar_event", "title": "x", "start": "2026-11-21T21:00", "minutes": 60, "location": "casa"}]).rejected, ["bad_schema"])
+        self.assertEqual(out([{"type": "calendar_event", "title": "x", "start": "2026-11-21T21:00"}]).rejected, ["bad_schema"])
+
+    def test_it_is_refused_when_the_calendar_is_off(self):
+        off = Config(calendar=False)
+        result = parse_model_output(json.dumps({"commands": [{"type": "calendar_event", "title": "x", "start": "2026-11-21T21:00", "minutes": 60}]}), off)
+        self.assertEqual(result.rejected, ["calendar_off"])
+
+
 class FloatAndAnchorTest(unittest.TestCase):
     def test_decimal_minutes_are_rejected_not_rounded(self):
         for bad in (60.0, 1.5, 1e2):

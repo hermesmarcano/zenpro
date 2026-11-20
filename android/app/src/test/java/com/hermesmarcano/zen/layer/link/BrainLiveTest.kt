@@ -53,6 +53,14 @@ class BrainLiveTest {
         assertEquals(CommandPolicy.Verdict.ACCEPT, CommandPolicy.check(draft, "com.hermesmarcano.zen.xiaomi", emptySet()))
         assertTrue("el cursor es opaco y no vacío", cursor.isNotBlank())
 
+        // 3b. La propuesta de calendario del adaptador (hora local → ms) la lee la app y la acepta su política.
+        val proposal = commands.filterIsInstance<BrainCommand.CalendarEvent>().single()
+        assertEquals("Cena con Marta", proposal.title)
+        assertEquals("el origen lo fija el servidor: quién lo escribió", "Marta", proposal.from)
+        assertEquals(90 * 60_000L, proposal.endMs - proposal.startMs)
+        assertTrue("empieza en el futuro", proposal.startMs > System.currentTimeMillis())
+        assertEquals(CommandPolicy.Verdict.ACCEPT, CommandPolicy.check(proposal, "com.hermesmarcano.zen.xiaomi", emptySet()))
+
         // 4. Con el cursor devuelto no vuelve lo ya entregado.
         val again = client.fetchCommands(cfg, cursor)
         assertEquals(ApiResult.Ok, again.result)

@@ -10,6 +10,7 @@ import json
 import re
 import unicodedata
 from dataclasses import dataclass, field
+from datetime import datetime
 
 from . import config
 from .sanitize import clean_output_text
@@ -24,7 +25,13 @@ _ALLOWED_KEYS = {
     "notify": {"type", "text"},
     "block": {"type", "app", "minutes"},
     "pause": {"type", "minutes"},
+    "calendar_event": {"type", "title", "start", "minutes"},
 }
+TITLE_MAX_CHARS = 100
+EVENT_MIN_MINUTES = 5
+EVENT_MAX_MINUTES = 720
+# Hora LOCAL de la persona, sin zona ni segundos («2026-11-21T09:00»): la zona la pone el adaptador, no el modelo.
+_LOCAL_START = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}")
 # Sin enlaces en los avisos: esquemas, www., cualquier «algo.tld», direcciones IP y trucos de ofuscación (`evil[.]com`).
 # Es una red amplia a propósito: un aviso rechazado por «p.ej.» cuesta poco; uno con un enlace malo, mucho.
 _URL = re.compile(
@@ -48,6 +55,7 @@ class Candidate:
     text: str = ""
     app: str = ""
     minutes: int = 0
+    start: str = ""  # calendar_event: «AAAA-MM-DDTHH:MM» local
 
 
 @dataclass
@@ -127,6 +135,25 @@ def _check_command(item: object, cfg: config.Config) -> tuple[Candidate | None, 
         if has_link(text):
             return None, "url_in_notify"
         return Candidate(kind, text=text), ""
+    if kind == "calendar_event":
+        if not cfg.calendar:
+            return None, "calendar_off"
+        title = clean_output_text(item["title"], TITLE_MAX_CHARS, single_line=True)
+        if not title:
+            return None, "empty_text"
+        if has_link(title):
+            return None, "url_in_title"
+        start = item["start"]
+        if not isinstance(start, str) or not _LOCAL_START.fullmatch(start):
+            return None, "bad_start"
+        try:
+            datetime.strptime(start, "%Y-%m-%dT%H:%M")  # descarta fechas imposibles («2026-02-30»)
+        except ValueError:
+            return None, "bad_start"
+        minutes = item["minutes"]
+        if isinstance(minutes, bool) or not isinstance(minutes, int):
+            return None, "bad_minutes"
+        return Candidate(kind, text=title, minutes=max(EVENT_MIN_MINUTES, min(EVENT_MAX_MINUTES, minutes)), start=start), ""
     if kind == "block":
         app = item["app"]
         if not isinstance(app, str) or len(app) > 255 or not config.PACKAGE_RE.fullmatch(app):

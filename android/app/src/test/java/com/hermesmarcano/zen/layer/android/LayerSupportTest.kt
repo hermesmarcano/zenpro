@@ -121,6 +121,8 @@ class LayerManifestTest {
     @Test fun noMorePowerIsRequestedThanTheLayerNeeds() {
         val requested = requested()
         for (p in listOf(
+            "android.permission.READ_CALENDAR", "android.permission.WRITE_CALENDAR", // el calendario se propone (intent), no se lee ni se escribe
+            "android.permission.READ_CALENDAR", "android.permission.WRITE_CALENDAR", // el calendario se propone (intent), no se lee ni se escribe
             "android.permission.READ_SMS", "android.permission.SEND_SMS", "android.permission.RECEIVE_SMS", "android.permission.READ_CONTACTS",
             "android.permission.READ_CALL_LOG", "android.permission.CALL_PHONE", "android.permission.ACCESS_FINE_LOCATION",
             "android.permission.ACCESS_COARSE_LOCATION", "android.permission.QUERY_ALL_PACKAGES", "android.permission.SYSTEM_ALERT_WINDOW",
@@ -157,6 +159,26 @@ class AndroidNotifierTest {
         assertFalse("la versión pública no lleva el texto", n.publicVersion.extras.getString(Notification.EXTRA_TEXT).orEmpty().contains("claro"))
         notifier.cancelDraft("d1")
         assertTrue(app.posted().isEmpty())
+    }
+
+    @Test fun aCalendarProposalOpensTheCalendarPrefilledAndNeedsNoPermission() {
+        val start = System.currentTimeMillis() + 86_400_000L
+        notifier.calendarProposal(com.hermesmarcano.zen.layer.core.BrainCommand.CalendarEvent("c1", "Cena con Marta", start, start + 5_400_000L, "Marta"))
+        val n = app.posted().single()
+        assertEquals("Agendar: Cena con Marta", n.extras.getString(Notification.EXTRA_TITLE))
+        assertEquals(listOf("Agendar"), n.actions.map { it.title.toString() })
+        assertEquals(Notification.VISIBILITY_PRIVATE, n.visibility)
+        assertFalse("la versión pública no lleva el título", n.publicVersion.extras.getString(Notification.EXTRA_TEXT).orEmpty().contains("Cena"))
+        assertTrue("el texto dice de quién viene", n.extras.getString(Notification.EXTRA_TEXT).orEmpty().contains("Marta"))
+        // Tocar la notificación y tocar «Agendar» abren el MISMO formulario del calendario, directamente (sin receptor intermedio).
+        for (pending in listOf(n.contentIntent, n.actions.single().actionIntent)) {
+            val intent = shadowOf(pending).savedIntent
+            assertEquals(Intent.ACTION_INSERT, intent.action)
+            assertEquals(android.provider.CalendarContract.Events.CONTENT_URI, intent.data)
+            assertEquals("Cena con Marta", intent.getStringExtra(android.provider.CalendarContract.Events.TITLE))
+            assertEquals(start, intent.getLongExtra(android.provider.CalendarContract.EXTRA_EVENT_BEGIN_TIME, 0L))
+            assertEquals(start + 5_400_000L, intent.getLongExtra(android.provider.CalendarContract.EXTRA_EVENT_END_TIME, 0L))
+        }
     }
 
     @Test fun theNudgeStatesAFactAndOffersToBlock() {
