@@ -10,6 +10,8 @@ import com.hermesmarcano.zen.layer.core.LayerState
 import com.hermesmarcano.zen.layer.core.LayerStateStore
 import com.hermesmarcano.zen.layer.core.LimitRule
 import com.hermesmarcano.zen.layer.core.PendingRule
+import com.hermesmarcano.zen.layer.core.SealedText
+import com.hermesmarcano.zen.layer.core.SecretBox
 import java.io.File
 import java.io.IOException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,7 +24,7 @@ import org.json.JSONObject
  * que el estado de ZEN. Un archivo corrupto se aparta como `.corrupt` y se arranca limpio: la capa nunca debe
  * quedarse sin poder iniciar por un archivo roto.
  */
-class LayerStateRepository(private val file: File) : LayerStateStore {
+class LayerStateRepository(private val file: File, private val secrets: SecretBox) : LayerStateStore {
     private val flow = MutableStateFlow(load())
     val state: StateFlow<LayerState> get() = flow
     override val current: LayerState get() = flow.value
@@ -40,7 +42,17 @@ class LayerStateRepository(private val file: File) : LayerStateStore {
     private fun load(): LayerState {
         if (!file.exists()) return LayerState()
         return try {
-            LayerStateJson.decode(file.readText(Charsets.UTF_8))
+            val text = file.readText(Charsets.UTF_8)
+            val loaded = LayerStateJson.decode(text, secrets)
+            // Un token guardado en claro por una versión anterior se vuelve a escribir ya cifrado.
+            if (LayerStateJson.hasPlainToken(text)) {
+                try {
+                    write(loaded)
+                } catch (_: IOException) {
+                    // Sin poder cifrar se queda como estaba; se reintentará en el siguiente cambio.
+                }
+            }
+            loaded
         } catch (_: Exception) {
             try {
                 file.copyTo(File(file.parentFile, file.name + ".corrupt"), overwrite = true)
@@ -56,7 +68,7 @@ class LayerStateRepository(private val file: File) : LayerStateStore {
         val parent = file.parentFile
         if (parent != null && !parent.exists() && !parent.mkdirs()) throw IOException("No se pudo crear $parent")
         val temp = File(parent, file.name + ".tmp")
-        temp.writeText(LayerStateJson.encode(state), Charsets.UTF_8)
+        temp.writeText(LayerStateJson.encode(state, secrets), Charsets.UTF_8)
         if (!temp.renameTo(file)) {
             file.delete()
             if (!temp.renameTo(file)) throw IOException("No se pudo guardar el estado de la capa")
@@ -70,8 +82,18 @@ class LayerStateRepository(private val file: File) : LayerStateStore {
  */
 internal object LayerStateJson {
     const val VERSION = 1
+    private const val TOKEN_CONTEXT = "layer.brainToken"
 
-    fun encode(s: LayerState): String {
+    /** ¿El archivo guarda un token sin cifrar? (Lo dejaba así la versión anterior; se corrige al cargar.) */
+    fun hasPlainToken(text: String): Boolean = try {
+        val token = JSONObject(text).optJSONObject("brain")?.optString("token", "").orEmpty()
+        token.isNotEmpty() && !SealedText.isSealed(token)
+    } catch (_: Exception) {
+        false
+    }
+
+    /** Lanza `IOException` si hay token y no se puede cifrar: nunca se escribe en claro. */
+    fun encode(s: LayerState, secrets: SecretBox): String {
         val root = JSONObject().put("version", VERSION)
         root.put(
             "capture",
@@ -110,7 +132,7 @@ internal object LayerStateJson {
         )
         root.put(
             "brain",
-            JSONObject().put("url", s.brainUrl).put("token", s.brainToken).put("deviceId", s.deviceId).put("commandCursor", s.commandCursor)
+            JSONObject().put("url", s.brainUrl).put("token", if (s.brainToken.isEmpty()) "" else secrets.seal(s.brainToken, TOKEN_CONTEXT)).put("deviceId", s.deviceId).put("commandCursor", s.commandCursor)
                 .put("seenCommandIds", JSONArray(s.seenCommandIds)).put("lastSyncOkAtMs", s.lastSyncOkAtMs ?: JSONObject.NULL)
                 .put("lastSyncError", s.lastSyncError),
         )
@@ -128,7 +150,7 @@ internal object LayerStateJson {
         return root.toString()
     }
 
-    fun decode(text: String): LayerState {
+    fun decode(text: String, secrets: SecretBox): LayerState {
         val root = JSONObject(text)
         val capture = root.optJSONObject("capture") ?: JSONObject()
         val brain = root.optJSONObject("brain") ?: JSONObject()
@@ -168,7 +190,7 @@ internal object LayerStateJson {
                 )
             },
             brainUrl = brain.optString("url", ""),
-            brainToken = brain.optString("token", ""),
+            brainToken = openToken(brain.optString("token", ""), secrets),
             deviceId = brain.optString("deviceId", ""),
             commandCursor = brain.optString("commandCursor", ""),
             seenCommandIds = strings(brain.optJSONArray("seenCommandIds")),
@@ -185,6 +207,13 @@ internal object LayerStateJson {
             accessibilityDownSinceMs = nullableLong(health, "accessibilityDownSinceMs"),
             lastRepairNoticeAtMs = health.optLong("lastRepairNoticeAtMs", 0L),
         )
+    }
+
+    /** Cifrado → se abre (o queda vacío si la clave ya no sirve: hay que volver a poner el token). Sin cifrar → versión anterior. */
+    private fun openToken(stored: String, secrets: SecretBox): String = when {
+        stored.isEmpty() -> ""
+        SealedText.isSealed(stored) -> secrets.open(stored, TOKEN_CONTEXT).orEmpty()
+        else -> stored
     }
 
     private fun ruleToJson(r: LimitRule): JSONObject = JSONObject().put("pkg", r.pkg).put("label", r.label).put("dailyLimitMs", r.dailyLimitMs)

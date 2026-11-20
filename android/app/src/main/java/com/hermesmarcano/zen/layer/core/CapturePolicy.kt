@@ -72,8 +72,11 @@ object SensitiveApps {
         "com.wallet.crypto.trustapp", "io.metamask", "com.revolut.revolut", "com.nu.production",
     )
 
-    /** Segmentos del nombre del paquete que delatan una app financiera. */
-    private val financialWords = listOf("bank", "banco", "banca", "bbva", "santander", "wallet", "paypal", "binance", "crypto", "fintech", "cartera")
+    /** Segmentos del nombre del paquete que delatan una app financiera o de salud (citas, recetas y resultados son de lo más privado). */
+    private val financialWords = listOf(
+        "bank", "banco", "banca", "bbva", "santander", "wallet", "paypal", "binance", "crypto", "fintech", "cartera",
+        "health", "salud", "medic", "clinic", "hospital", "pharm", "farmacia", "telemed",
+    )
 
     /** Teclados, pantalla de inicio y barra de estado: duplican texto o solo muestran teclas. */
     private val noise = setOf(

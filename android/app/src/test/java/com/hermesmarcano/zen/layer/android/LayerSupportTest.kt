@@ -59,6 +59,8 @@ private fun ZenApp.titles(): List<String?> = posted().map { it.extras.getString(
 @RunWith(RobolectricTestRunner::class)
 @Config(application = ZenApp::class, sdk = [34])
 class LayerManifestTest {
+    init { useSoftwareSecrets() }
+
     private val app: ZenApp = ApplicationProvider.getApplicationContext()
     private val pm: PackageManager get() = app.packageManager
 
@@ -133,6 +135,8 @@ class LayerManifestTest {
 @RunWith(RobolectricTestRunner::class)
 @Config(application = ZenApp::class, sdk = [34])
 class AndroidNotifierTest {
+    init { useSoftwareSecrets() }
+
     private val app: ZenApp = ApplicationProvider.getApplicationContext()
     private val notifier get() = app.layer.notifier
     private val manager get() = app.getSystemService(NotificationManager::class.java)
@@ -195,6 +199,8 @@ class AndroidNotifierTest {
 @RunWith(RobolectricTestRunner::class)
 @Config(application = ZenApp::class, sdk = [34])
 class LayerSchedulerTest {
+    init { useSoftwareSecrets() }
+
     private val app: ZenApp = ApplicationProvider.getApplicationContext()
     private val scheduler get() = app.getSystemService(JobScheduler::class.java)
     private val runtime get() = app.layer
@@ -255,6 +261,8 @@ class LayerSchedulerTest {
 @RunWith(RobolectricTestRunner::class)
 @Config(application = ZenApp::class, sdk = [34])
 class LayerMaintenanceTest {
+    init { useSoftwareSecrets() }
+
     private val app: ZenApp = ApplicationProvider.getApplicationContext()
     private val runtime get() = app.layer
 
@@ -322,6 +330,8 @@ class LayerMaintenanceTest {
 @RunWith(RobolectricTestRunner::class)
 @Config(application = ZenApp::class, sdk = [34])
 class AccessibilityHealerTest {
+    init { useSoftwareSecrets() }
+
     private val app: ZenApp = ApplicationProvider.getApplicationContext()
     private val runtime get() = app.layer
     private val now = 10 * 60 * 60_000L
@@ -408,6 +418,8 @@ class AccessibilityHealerTest {
 @RunWith(RobolectricTestRunner::class)
 @Config(application = ZenApp::class, sdk = [34])
 class LayerStatusTest {
+    init { useSoftwareSecrets() }
+
     private val app: ZenApp = ApplicationProvider.getApplicationContext()
 
     @Test fun theHealthSnapshotReflectsTheStateAndTheLiveFlags() {

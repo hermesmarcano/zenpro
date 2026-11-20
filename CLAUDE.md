@@ -90,6 +90,17 @@ a la app normal ni se publicarán en App Store / Google Play. Por eso:
   `NotificationListener`, permisos asociados) debe aparecer en `main`.
 - Cualquier texto o ayuda que nombre al paquete (p. ej. el comando `adb shell pm grant …`) debe derivarse de
   `context.packageName`, no escribirse a mano.
+- **`brain/` (adaptador `zen-brain`, el servidor entre la app y Hermes) también es solo de esta rama.** Python con solo biblioteca estándar;
+  sus pruebas son `cd brain && python3 -m unittest discover -s . -t . -p "test_*.py"` y forman parte del ciclo de revisión (el CI
+  `android-xiaomi.yml` las repite en Python 3.10 y 3.13). Ver `brain/README.md`.
+- **Reglas de seguridad de la variante (no se relajan sin pedirlo el dueño):**
+  - El token del cerebro, el texto de los eventos en cola y el audio pendiente van **cifrados con la clave del Keystore** (`SecretBox`);
+    si cifrar falla, el cambio falla: **nunca** hay plan B en claro. La memoria (FTS) no se cifra y la documentación lo dice.
+  - `http://` solo hacia localhost o Tailscale (`BrainUrl`); nunca una red local. El resto, `https://`.
+  - El cerebro solo bloquea apps con una regla en «Límites»; avisos ≤ 200 caracteres y sin enlaces; con tope por hora. La pausa corta toda la red.
+  - En el servidor, el adaptador es la única frontera: valida con esquema estricto lo que dice el modelo, fija él el destino de un borrador,
+    no escribe texto de usuario ni del modelo en la auditoría y no emite nada si no puede auditar. `ZEN_PHONE_TOKEN` no existe (no se podía revocar).
+  - Todo texto observado que llegue a un prompt va saneado y entre etiquetas con identificador aleatorio; nunca en el prompt de sistema.
 - Esta regla vive en la rama de la variante; `main` solo la tendrá si su dueño la añade allí.
 
 ## Android (carpeta `android/`)
@@ -130,5 +141,8 @@ la fase de revisión antes de cada commit (el CI `android.yml` repite lo mismo).
   una notificación se redactan juntos; todo trabajo en el hilo de E/S pasa por `LayerRuntime.runIo` (una excepción suelta en un hilo mata
   la app); un servicio en primer plano solo se arranca con `AmbientAudioService.start` (comprueba antes sus precondiciones). Los editores de la
   pantalla son paneles y no diálogos: un campo de texto dentro de un `AlertDialog` impide que Compose llegue a reposo en Robolectric.
+- Gradle sin red: con la caché ya caliente, `--offline` evita los 429 de Maven Central; si dice «No cached version available», un
+  `:app:compileDebugKotlin` normal (con red, `--max-workers=1`) vuelve a registrar los JAR y después `--offline` sirve de nuevo.
+- Robolectric no tiene Keystore: las pruebas que guardan un token llaman a `useSoftwareSecrets()` (`LayerSecrets.factory`).
 - Entorno remoto sin SDK: se instala en `~/android-sdk` (cmdline-tools 11076708 + `platforms;android-35` + `build-tools;35.0.0`) y se usa
   `--max-workers=1 -Dorg.gradle.parallel=false` (Maven Central responde 429 en cuanto se paraleliza).

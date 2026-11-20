@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Ejecuta `python -m zen_brain <orden>` como el usuario «zen», con /opt/zen-brain/.env cargado.
+# Uso:  zenctl check | tokens add <nombre> | tokens revoke <nombre> | stats | fetch-model
+set -euo pipefail
+exec sudo -u zen bash -c '
+  set -euo pipefail
+  set -a; . /opt/zen-brain/.env; set +a
+  export PYTHONPATH=/opt/zen-brain/adapter PYTHONDONTWRITEBYTECODE=1 ZEN_ENV_FILE=/opt/zen-brain/.env
+  exec /opt/zen-brain/venv/bin/python -m zen_brain "$@"
+' _ "$@"

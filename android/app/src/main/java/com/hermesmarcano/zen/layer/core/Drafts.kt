@@ -111,8 +111,13 @@ class CommandApplier(
 ) {
     enum class Outcome { APPLIED, DUPLICATE, REJECTED }
 
+    // Un cerebro engañado no debe poder inundar de avisos ni bloquear apps en ráfaga.
+    private val notices = RateWindow(NOTICES_PER_HOUR, HOUR_MS)
+    private val brainBlocks = RateWindow(BLOCKS_PER_HOUR, HOUR_MS)
+
     fun apply(command: BrainCommand): Outcome {
-        val verdict = CommandPolicy.check(command, ownPackage, state.current.seenCommandIds)
+        val blockable = state.current.limits.mapTo(HashSet()) { it.pkg }
+        val verdict = CommandPolicy.check(command, ownPackage, state.current.seenCommandIds, blockable)
         if (verdict == CommandPolicy.Verdict.DUPLICATE) return Outcome.DUPLICATE
         if (command.id.isNotBlank()) {
             try {
@@ -124,6 +129,8 @@ class CommandApplier(
         }
         if (verdict != CommandPolicy.Verdict.ACCEPT) return Outcome.REJECTED
         val now = clock()
+        if (command is BrainCommand.Notify && !notices.tryAcquire(now)) return Outcome.REJECTED
+        if (command is BrainCommand.Block && !brainBlocks.tryAcquire(now)) return Outcome.REJECTED
         // Una escritura fallida dentro de una orden no debe tumbar la sincronización entera.
         try {
             when (command) {
@@ -151,5 +158,11 @@ class CommandApplier(
             return Outcome.REJECTED
         }
         return Outcome.APPLIED
+    }
+
+    private companion object {
+        const val NOTICES_PER_HOUR = 6
+        const val BLOCKS_PER_HOUR = 3
+        const val HOUR_MS = 60 * 60_000L
     }
 }

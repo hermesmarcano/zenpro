@@ -2,7 +2,6 @@ package com.hermesmarcano.zen.layer.link
 
 import com.hermesmarcano.zen.layer.core.BrainUrl
 import com.hermesmarcano.zen.layer.core.OutboxItem
-import java.io.File
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
@@ -23,14 +22,14 @@ class BrainClient(
         return send(cfg, "POST", "/v1/events", "application/json", body = body)
     }
 
-    override fun postAudio(cfg: BrainConfig, item: OutboxItem, file: File): ApiResult {
+    override fun postAudio(cfg: BrainConfig, item: OutboxItem, wav: ByteArray): ApiResult {
         val extra = mapOf(
             "X-Zen-Segment-Id" to item.id,
             "X-Zen-Started-At" to item.createdAtMs.toString(),
             // 16 kHz, 16 bits, mono: 32 000 bytes por segundo, menos la cabecera de 44.
-            "X-Zen-Duration-Ms" to (((file.length() - 44).coerceAtLeast(0) * 1000) / 32_000).toString(),
+            "X-Zen-Duration-Ms" to (((wav.size - 44).coerceAtLeast(0).toLong() * 1000) / 32_000).toString(),
         )
-        return send(cfg, "POST", "/v1/audio", "audio/wav", headers = extra, file = file)
+        return send(cfg, "POST", "/v1/audio", "audio/wav", headers = extra, body = wav)
     }
 
     override fun fetchCommands(cfg: BrainConfig, cursor: String): CommandsResult {
@@ -53,7 +52,6 @@ class BrainClient(
         contentType: String?,
         headers: Map<String, String> = emptyMap(),
         body: ByteArray? = null,
-        file: File? = null,
         onBody: (String) -> Unit = {},
     ): ApiResult {
         // Se vuelve a validar: el estado pudo cambiar o corromperse desde que se configuró.
@@ -78,10 +76,6 @@ class BrainClient(
                 connection.doOutput = true
                 connection.setFixedLengthStreamingMode(body.size)
                 connection.outputStream.use { it.write(body) }
-            } else if (file != null) {
-                connection.doOutput = true
-                connection.setFixedLengthStreamingMode(file.length())
-                file.inputStream().use { input -> connection.outputStream.use { input.copyTo(it) } }
             }
             val code = connection.responseCode
             val text = if (code in 200..299) readLimited(connection) else ""

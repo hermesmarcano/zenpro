@@ -18,12 +18,32 @@ sealed interface BrainCommand {
 object CommandPolicy {
     const val MAX_BLOCK_MINUTES = 24 * 60
     const val MAX_PAUSE_MINUTES = 24 * 60
-    const val MAX_NOTIFY_CHARS = 300
+    const val MAX_NOTIFY_CHARS = 200
+    const val MAX_NOTIFY_TITLE_CHARS = 60
     const val REMEMBER_IDS = 500
 
-    enum class Verdict { ACCEPT, DUPLICATE, INVALID, PROTECTED }
+    enum class Verdict { ACCEPT, DUPLICATE, INVALID, PROTECTED, NOT_ALLOWED, LINK }
 
-    fun check(command: BrainCommand, ownPackage: String, seenIds: Collection<String>): Verdict {
+    // Sin enlaces en los avisos del cerebro: esquemas, www., cualquier «algo.tld», direcciones IP y ofuscaciones (`evil[.]com`).
+    // Red amplia a propósito: un aviso rechazado por «p.ej.» cuesta poco; uno con un enlace malo, mucho.
+    private val link = Regex(
+        "([a-z][a-z0-9+.\\-]*://|\\bwww\\.|\\b(mailto|tel|sms|intent|javascript|data|file):|" +
+            "\\b\\d{1,3}(\\.\\d{1,3}){3}\\b|[\\w\\-]+(\\.[\\w\\-]+)*\\.[a-z]{2,}\\b)",
+        RegexOption.IGNORE_CASE,
+    )
+    private val defang = Regex("[\\[({]\\s*(\\.|dot|punto)\\s*[\\])}]", RegexOption.IGNORE_CASE)
+
+    fun hasLink(text: String): Boolean {
+        // NFKC: «．» de ancho completo → «.»; luego «[.]», «(dot)»… → «.».
+        val flat = defang.replace(java.text.Normalizer.normalize(text, java.text.Normalizer.Form.NFKC), ".")
+        return link.containsMatchIn(flat)
+    }
+
+    /**
+     * [blockable]: las únicas apps que el cerebro puede bloquear, es decir, las que el usuario ya puso bajo una regla
+     * en «Límites». Sin regla, el cerebro no toca la app (por defecto no bloquea nada).
+     */
+    fun check(command: BrainCommand, ownPackage: String, seenIds: Collection<String>, blockable: Set<String> = emptySet()): Verdict {
         if (command.id.isBlank()) return Verdict.INVALID
         if (command.id in seenIds) return Verdict.DUPLICATE
         return when (command) {
@@ -32,10 +52,14 @@ object CommandPolicy {
             is BrainCommand.Block -> when {
                 command.pkg.isBlank() || command.minutes !in 1..MAX_BLOCK_MINUTES -> Verdict.INVALID
                 NeverBlock.isProtected(command.pkg, ownPackage) -> Verdict.PROTECTED
+                command.pkg !in blockable -> Verdict.NOT_ALLOWED
                 else -> Verdict.ACCEPT
             }
-            is BrainCommand.Notify ->
-                if (command.text.isBlank() || command.text.length > MAX_NOTIFY_CHARS || command.title.length > MAX_NOTIFY_CHARS) Verdict.INVALID else Verdict.ACCEPT
+            is BrainCommand.Notify -> when {
+                command.text.isBlank() || command.text.length > MAX_NOTIFY_CHARS || command.title.length > MAX_NOTIFY_TITLE_CHARS -> Verdict.INVALID
+                hasLink(command.text) || hasLink(command.title) -> Verdict.LINK
+                else -> Verdict.ACCEPT
+            }
             is BrainCommand.Pause ->
                 if (command.minutes !in 1..MAX_PAUSE_MINUTES) Verdict.INVALID else Verdict.ACCEPT
         }

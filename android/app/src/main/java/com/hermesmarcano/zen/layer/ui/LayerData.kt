@@ -161,7 +161,8 @@ internal fun BrainSection(env: LayerEnv, state: LayerState) {
     SectionTitle("Cerebro")
     Hint(
         "Tu propio servidor (por ejemplo Hermes). Recibe lo que la capa guarda y puede proponerte respuestas, avisos y bloqueos; " +
-            "no puede quitarte un bloqueo ni enviar nada sin tu aprobación. https:// funciona desde cualquier sitio; http:// solo hacia tu red (localhost, 192.168.x.x, 10.x.x.x, Tailscale).",
+            "no puede quitarte un bloqueo ni enviar nada sin tu aprobación, y solo puede bloquear apps que tengan una regla en Límites. " +
+            "https:// funciona desde cualquier sitio; http:// solo por Tailscale (100.x.x.x, *.ts.net) o en este mismo teléfono (localhost).",
     )
     OutlinedTextField(
         value = url, onValueChange = { url = it }, label = { Text("Dirección del cerebro") }, singleLine = true,
@@ -192,6 +193,7 @@ internal fun BrainSection(env: LayerEnv, state: LayerState) {
                     syncing = false
                     env.say(
                         when {
+                            report.paused -> "La capa está en pausa: no se envía ni se recibe nada hasta que termine."
                             report.skipped -> "No hay un cerebro válido configurado."
                             report.error != null -> "Sincronizado con problemas: ${report.error}"
                             else -> "Enviado: ${report.eventsSent} eventos, ${report.audioSent} audios. Órdenes aplicadas: ${report.commandsApplied}."
@@ -229,5 +231,5 @@ private fun urlError(error: BrainUrl.Error): String = when (error) {
     BrainUrl.Error.MALFORMED -> "La dirección no es válida: debe empezar por https:// o http://."
     BrainUrl.Error.NO_HOST -> "Falta el nombre del servidor en la dirección."
     BrainUrl.Error.CREDENTIALS_IN_URL -> "No pongas usuario ni contraseña en la dirección: usa el campo Token."
-    BrainUrl.Error.CLEARTEXT_NOT_ALLOWED -> "http:// solo se acepta hacia tu propia red (localhost, 192.168.x.x, 10.x.x.x, Tailscale). Para internet usa https://."
+    BrainUrl.Error.CLEARTEXT_NOT_ALLOWED -> "http:// solo se acepta por Tailscale (100.x.x.x, *.ts.net) o en este teléfono (localhost): en una red local cualquiera podría leerlo. Usa https://."
 }

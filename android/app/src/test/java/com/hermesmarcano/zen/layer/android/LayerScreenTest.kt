@@ -54,6 +54,8 @@ private const val TIKTOK = "com.zhiliaoapp.musically"
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(application = ZenApp::class, sdk = [34], qualifiers = "w411dp-h4000dp-xxhdpi")
 class LayerScreenTest {
+    init { useSoftwareSecrets() }
+
     @get:Rule val compose = createComposeRule()
     private val app: ZenApp = ApplicationProvider.getApplicationContext()
     private val runtime get() = app.layer
@@ -450,7 +452,16 @@ class LayerScreenTest {
         node("Dirección del cerebro").typeText("http://example.com")
         node("Token").typeText("secreto")
         node("Guardar").tap()
-        compose.onNodeWithText("http:// solo se acepta hacia tu propia red", substring = true).assertExists()
+        compose.onNodeWithText("http:// solo se acepta por Tailscale", substring = true).assertExists()
+        assertEquals("", runtime.state.current.brainUrl)
+    }
+
+    @Test fun aLocalNetworkAddressIsNotAcceptedOverPlainHttp() {
+        show()
+        node("Dirección del cerebro").typeText("http://192.168.1.20:8787")
+        node("Token").typeText("secreto")
+        node("Guardar").tap()
+        compose.onNodeWithText("http:// solo se acepta por Tailscale", substring = true).assertExists()
         assertEquals("", runtime.state.current.brainUrl)
     }
 
@@ -473,6 +484,17 @@ class LayerScreenTest {
         assertTrue(runtime.state.current.brainConfigured)
     }
 
+    @Test fun theSavedTokenIsNotInThePlainOnDisk() {
+        show()
+        node("Dirección del cerebro").typeText("https://brain.example.com")
+        node("Token").typeText("secreto-largo-12345")
+        node("Guardar").tap()
+        val onDisk = java.io.File(app.filesDir, "layer/layer.json").readText()
+        assertFalse("el token no puede estar en claro en el archivo", onDisk.contains("secreto-largo-12345"))
+        assertTrue(onDisk.contains("enc1:"))
+        assertEquals("secreto-largo-12345", runtime.state.current.brainToken)
+    }
+
     @Test fun removingTheBrainAlsoTurnsTheMicrophoneOff() {
         runtime.state.update { it.copy(brainUrl = "https://brain.example.com", brainToken = "tok", capture = it.capture.copy(ambientAudio = true), commandCursor = "c") }
         show()
@@ -482,6 +504,13 @@ class LayerScreenTest {
         assertEquals("", s.brainToken)
         assertEquals("", s.commandCursor)
         assertFalse(s.capture.ambientAudio)
+    }
+
+    @Test fun syncNowWhilePausedSaysSoAndSendsNothing() {
+        runtime.state.update { it.copy(brainUrl = "https://brain.example.com", brainToken = "tok", capture = it.capture.copy(pausedUntilMs = System.currentTimeMillis() + 3_600_000L)) }
+        show()
+        node("Sincronizar ahora").tap()
+        waitForText("La capa está en pausa", substring = true)
     }
 
     @Test fun syncNowIsOnlyOfferedWithAConfiguredBrain() {

@@ -7,7 +7,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-private class FakeSender(var result: ReplySendResult = ReplySendResult.SENT) : ReplySender {
+internal class FakeSender(var result: ReplySendResult = ReplySendResult.SENT) : ReplySender {
     val known = mutableMapOf("wa|marta" to ReplyTarget("com.whatsapp", "Marta"))
     val sent = ArrayList<Pair<String, String>>()
     override fun target(conversationKey: String) = known[conversationKey]
@@ -17,7 +17,7 @@ private class FakeSender(var result: ReplySendResult = ReplySendResult.SENT) : R
     }
 }
 
-private class RecordingNotifier : Notifier {
+internal class RecordingNotifier : Notifier {
     val notices = ArrayList<Pair<String, String>>()
     val drafts = ArrayList<Draft>()
     val nudges = ArrayList<LimitDecision.Nudge>()
@@ -135,7 +135,8 @@ class DraftControllerTest {
 
 class CommandApplierTest {
     private var now = 10 * HOUR
-    private val state = MemoryState(LayerState(capture = CaptureSettings()))
+    // El cerebro solo puede bloquear apps que el usuario ya puso bajo una regla.
+    private val state = MemoryState(LayerState(capture = CaptureSettings(), limits = listOf(LimitRule("com.zhiliaoapp.musically", "TikTok", 0L))))
     private val timeline = MemoryTimeline()
     private val sender = FakeSender()
     private val notifier = RecordingNotifier()

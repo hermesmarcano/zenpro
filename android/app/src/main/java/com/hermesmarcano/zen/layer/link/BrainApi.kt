@@ -3,7 +3,6 @@ package com.hermesmarcano.zen.layer.link
 import com.hermesmarcano.zen.layer.core.BrainCommand
 import com.hermesmarcano.zen.layer.core.LayerEvent
 import com.hermesmarcano.zen.layer.core.OutboxItem
-import java.io.File
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -28,7 +27,7 @@ data class CommandsResult(val result: ApiResult, val commands: List<BrainCommand
 /** Lo que la capa le pide al cerebro. Es una interfaz para poder probar la sincronización sin red. */
 interface BrainApi {
     fun postEvents(cfg: BrainConfig, events: List<OutboxItem>): ApiResult
-    fun postAudio(cfg: BrainConfig, item: OutboxItem, file: File): ApiResult
+    fun postAudio(cfg: BrainConfig, item: OutboxItem, wav: ByteArray): ApiResult
     fun fetchCommands(cfg: BrainConfig, cursor: String): CommandsResult
 }
 

@@ -1,0 +1,64 @@
+# /etc/systemd/system/zen-brain-adapter.service
+#
+# Adaptador entre la app «ZEN Xiaomi» y Hermes. Solo habla con loopback y escribe en dos directorios.
+# Comprobar el endurecimiento tras instalarlo:  systemd-analyze security zen-brain-adapter
+[Unit]
+Description=ZEN brain adapter (ZEN Xiaomi <-> Hermes zen-brain)
+After=network.target
+
+[Service]
+Type=simple
+User=zen
+Group=zen
+WorkingDirectory=/opt/zen-brain/adapter
+# Claves y configuración: /opt/zen-brain/.env (600, dueño zen). El servicio NO imprime ni registra su contenido.
+EnvironmentFile=/opt/zen-brain/.env
+Environment=PYTHONPATH=/opt/zen-brain/adapter
+# Para que `serve` compruebe también los permisos de .env al arrancar.
+Environment=ZEN_ENV_FILE=/opt/zen-brain/.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+# El modelo de Whisper se descarga una vez con `python -m zen_brain fetch-model` (con red); luego se usa sin red.
+Environment=HF_HUB_OFFLINE=1
+ExecStart=/opt/zen-brain/venv/bin/python -m zen_brain serve
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=20
+UMask=0077
+
+# --- Endurecimiento -----------------------------------------------------------------------------------------
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectProc=invisible
+ProcSubset=pid
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+# El adaptador solo habla con Hermes (127.0.0.1) y con `tailscale serve` (también local): nada más sale ni entra.
+IPAddressDeny=any
+IPAddressAllow=localhost
+# Solo puede escribir su estado y su auditoría. tokens.json y .env los administra el operador, no el servicio.
+ReadWritePaths=/opt/zen-brain/data /opt/zen-brain/audit
+ReadOnlyPaths=/opt/zen-brain/.env /opt/zen-brain/tokens.json /opt/zen-brain/adapter /opt/zen-brain/venv
+# Whisper «small» usa ~1 GB; los topes frenan un fallo o un abuso antes de que tumbe al servidor.
+MemoryMax=2G
+TasksMax=64
+LimitNOFILE=256
+
+[Install]
+WantedBy=multi-user.target

@@ -51,7 +51,8 @@ de ZEN que se publicará, y por eso están separadas de arriba abajo:
    contraseñas etiquetadas y claves (`sk-…`, `ghp_…`, JWT…) *antes* de escribir en disco o enviar. El título y el
    cuerpo de una notificación se revisan **juntos**: un «Código de verificación» en el título oculta el número del cuerpo.
 4. **El cerebro puede restringir, nunca relajar**: puede proponer una respuesta, bloquear una app (máx. 24 h),
-   pausar la observación o avisar. No puede quitar un bloqueo ni enviar un mensaje.
+   pausar la observación o avisar. No puede quitar un bloqueo ni enviar un mensaje. Y aun así está acotado: **solo bloquea apps
+   que tú ya pusiste bajo una regla en «Límites»** (sin regla, no toca la app), con un máximo de 3 bloqueos y 6 avisos por hora.
 5. **Los compromisos tienen fricción**: endurecer un límite vale al instante; **aflojarlo o quitarlo tarda 24 h**.
    Soltar un bloqueo exige esperar un minuto y escribir un motivo, solo da un *pase* de 15 minutos y máximo 3 al día.
 6. **Mínimo privilegio**: no pide SMS, contactos, ubicación, llamadas, almacenamiento, superposición ni
@@ -86,11 +87,13 @@ Los nombres exactos de los menús cambian entre versiones de MIUI; si alguno no 
 
 ## El cerebro (protocolo)
 
-El *cerebro* es tu servidor (por ejemplo, un agente Hermes). La capa le habla con tres endpoints; **el lado del servidor no está
-implementado en este repositorio**: hace falta un adaptador que hable este protocolo.
+El *cerebro* es tu servidor (por ejemplo, un agente Hermes). La capa le habla con tres endpoints. El lado del servidor es el
+**adaptador `zen-brain`** de este repositorio ([`brain/`](../brain/README.md)): traduce este protocolo al de Hermes y es el único
+que valida lo que el modelo propone.
 
-- Dirección: `https://…` desde cualquier sitio; `http://` **solo** hacia tu propia red (`localhost`, `10.x`, `172.16–31.x`,
-  `192.168.x`, Tailscale `100.64–127.x`, `*.local`, `*.ts.net`). Sin usuario/contraseña en la URL.
+- Dirección: `https://…` desde cualquier sitio; `http://` **solo** cuando el tráfico no sale en claro de todos modos: este mismo
+  teléfono (`localhost`, `127.x`) o Tailscale (`100.64–127.x`, `*.ts.net`, `fd7a:115c:a1e0::/48`; WireGuard ya lo cifra). Una red
+  local (`192.168.x`, `10.x`, `*.local`) **no** vale: en una wifi cualquiera podrían leer el token. Sin usuario/contraseña en la URL.
 - Autenticación: cabecera `Authorization: Bearer <token>`. El token nunca va en la URL. No se siguen redirecciones.
 - `User-Agent: ZEN-Layer/<versión>`. Cada teléfono manda un `device` aleatorio (UUID) que se crea al guardar el cerebro.
 
@@ -108,12 +111,12 @@ Cuerpo (`application/json`), hasta 100 eventos por lote:
 `kind` ∈ `screen`, `notification`, `audio`, `usage`, `system`, `override`. `at` es epoch en milisegundos. `extra.conv` identifica
 la conversación cuando se puede responder. Un `2xx` confirma el lote. `401/403` = token rechazado (la capa se detiene hasta que se
 arregle). Otro `4xx` = rechazado (se reenvía uno a uno para aislar el malo; con 5 rechazos de un mismo elemento se descarta).
-`408/425/429/5xx` o sin red = se reintenta con espera creciente (30 s → 1 h) y **no se pierde nada** durante 3 días.
+`408/425/429/5xx` o sin red = se reintenta con espera creciente (30 s → 1 h) y **no se pierde nada** durante 24 horas.
 
 ### `POST /v1/audio`
 
-Cuerpo `audio/wav` (16 kHz, 16 bits, mono) de un tramo de voz. Cabeceras: `X-Zen-Segment-Id`, `X-Zen-Started-At` (epoch ms),
-`X-Zen-Duration-Ms`. El cerebro transcribe; la capa **no** transcribe en el teléfono.
+Cuerpo `audio/wav` (16 kHz, 16 bits, mono, **como mucho 29 s**: el servidor rechaza más de 30) de un tramo de voz. Cabeceras:
+`X-Zen-Segment-Id`, `X-Zen-Started-At` (epoch ms), `X-Zen-Duration-Ms`. El cerebro transcribe; la capa **no** transcribe en el teléfono.
 
 ### `GET /v1/commands?device=<id>&cursor=<cursor>`
 
@@ -128,15 +131,25 @@ Cuerpo `audio/wav` (16 kHz, 16 bits, mono) de un tramo de voz. Cabeceras: `X-Zen
 
 - `id` es obligatorio y se usa para **no ejecutar dos veces** la misma orden (la capa recuerda los últimos 500).
 - `draft_reply` crea un **borrador pendiente** (notificación con «Enviar / Descartar»); nunca envía.
-- `block`: 1–1440 minutos; se ignora para apps protegidas. `pause`: 1–1440 minutos. `notify`: texto de hasta 300 caracteres.
+- `block`: 1–1440 minutos; se ignora para apps protegidas **y para toda app que no tenga una regla en «Límites»**. `pause`: 1–1440
+  minutos. `notify`: título de hasta 60 y texto de hasta 200 caracteres, **sin enlaces** (esquemas, `www.`, dominios, IP: se rechaza).
+- Límites de la propia app, aunque el servidor falle: 6 avisos y 3 bloqueos del cerebro por hora.
 - Un tipo desconocido se salta (el cerebro puede ser más nuevo que el teléfono). Un `404` significa «este cerebro no manda órdenes»: es válido.
 
 ## Qué se guarda, dónde y cuánto
 
-- **En el teléfono**, en el almacenamiento privado de la app (`allowBackup=false`): estado (`layer/layer.json`, incluye el token
-  del cerebro **en texto claro**, protegido solo por el aislamiento de Android), memoria (`zen-layer.db`, SQLite con búsqueda
-  FTS4 sin tildes ni mayúsculas) y audio pendiente (`layer/audio/`).
-- **Retención**: memoria 30 días o 20 000 filas; cola de envío 3 días o 5 000 elementos; audio hasta que se envía (tope de 200 MB).
+- **En el teléfono**, en el almacenamiento privado de la app (`allowBackup=false`): estado (`layer/layer.json`), memoria
+  (`zen-layer.db`, SQLite con búsqueda FTS4 sin tildes ni mayúsculas) y audio pendiente (`layer/audio/`).
+- **Qué va cifrado**: con una clave del **Keystore de Android** (AES-256-GCM, respaldada por hardware en el Redmi Note 8, que no
+  sale del teléfono) se cifran **el token del cerebro, el texto de los eventos en cola y el audio pendiente**. Si el Keystore falla
+  no se guarda nada en claro: el cambio falla y la pantalla lo dice. Un token guardado en claro por una versión anterior se
+  vuelve a escribir cifrado al abrir la capa.
+- **Qué NO va cifrado, y por qué**: la **memoria** (`zen-layer.db`). Necesita búsqueda de texto completo, y cifrar el contenido
+  la haría imposible (haría falta SQLCipher). Está protegida por el aislamiento de Android y por el cifrado de disco del teléfono,
+  y se limita a 30 días. Por eso la cola cifrada protege el audio (que no existe en ningún otro sitio) y el token, pero no
+  esconde del todo el *texto*, que también está en la memoria: no lo vendas como más de lo que es.
+- **Retención**: memoria 30 días o 20 000 filas; cola de envío **24 horas o 500 elementos**; audio hasta que se envía (tope de 200 MB).
+  Con la capa en pausa no sale nada, así que lo que espera se retiene hasta 24 h como mucho y luego se descarta.
 - **Borrar**: «Borrar todo…» en la pantalla Capa (memoria + cola + audio); vetar una app también olvida lo que había de ella.
   «Quitar cerebro» borra además la cola de envío y el audio pendiente: eran para ese cerebro y no deben acabar en otro servidor
   que se configure después (la memoria local se conserva).

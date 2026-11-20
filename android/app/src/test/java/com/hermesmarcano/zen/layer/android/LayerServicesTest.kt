@@ -75,6 +75,8 @@ private fun node(text: String? = null, pkg: String? = null, visible: Boolean = t
 @RunWith(org.robolectric.RobolectricTestRunner::class)
 @Config(application = ZenApp::class, sdk = [34])
 class LayerAccessibilityServiceTest {
+    init { useSoftwareSecrets() }
+
     private val app: ZenApp = ApplicationProvider.getApplicationContext()
     private val runtime get() = app.runtime()
     private lateinit var service: LayerAccessibilityService
@@ -222,6 +224,8 @@ class LayerAccessibilityServiceTest {
 @RunWith(org.robolectric.RobolectricTestRunner::class)
 @Config(application = ZenApp::class, sdk = [34])
 class LayerNotificationListenerTest {
+    init { useSoftwareSecrets() }
+
     private val app: ZenApp = ApplicationProvider.getApplicationContext()
     private val runtime get() = app.runtime()
     private lateinit var listener: LayerNotificationListener
@@ -299,6 +303,8 @@ class LayerNotificationListenerTest {
 @RunWith(org.robolectric.RobolectricTestRunner::class)
 @Config(application = ZenApp::class, sdk = [34])
 class LayerActionReceiverTest {
+    init { useSoftwareSecrets() }
+
     private val app: ZenApp = ApplicationProvider.getApplicationContext()
     private val runtime get() = app.runtime()
     private val key = "$WHATSAPP|conv-1"
@@ -382,6 +388,8 @@ class LayerActionReceiverTest {
 @RunWith(org.robolectric.RobolectricTestRunner::class)
 @Config(application = ZenApp::class, sdk = [34])
 class AmbientAudioServiceTest {
+    init { useSoftwareSecrets() }
+
     private val app: ZenApp = ApplicationProvider.getApplicationContext()
     private val runtime get() = app.runtime()
 

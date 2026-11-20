@@ -20,6 +20,7 @@ import com.hermesmarcano.zen.layer.core.ReplySendResult
 import com.hermesmarcano.zen.layer.core.ReplySender
 import com.hermesmarcano.zen.layer.core.ReplyTarget
 import com.hermesmarcano.zen.layer.core.UtcDays
+import com.hermesmarcano.zen.layer.core.softwareBox
 import com.hermesmarcano.zen.layer.data.AudioFiles
 import java.io.File
 import org.junit.Assert.assertEquals
@@ -40,7 +41,7 @@ private class FakeApi : BrainApi {
     val eventCalls = ArrayList<List<OutboxItem>>()
     val audioResults = ArrayDeque<ApiResult>()
     var defaultAudio: ApiResult = ApiResult.Ok
-    val audioCalls = ArrayList<Pair<OutboxItem, File>>()
+    val audioCalls = ArrayList<Pair<OutboxItem, ByteArray>>()
     var commands = CommandsResult(ApiResult.Ok)
     val cursors = ArrayList<String>()
     var onPostEvents: () -> Unit = {}
@@ -51,8 +52,8 @@ private class FakeApi : BrainApi {
         return eventResults.removeFirstOrNull() ?: defaultEvent
     }
 
-    override fun postAudio(cfg: BrainConfig, item: OutboxItem, file: File): ApiResult {
-        audioCalls += item to file
+    override fun postAudio(cfg: BrainConfig, item: OutboxItem, wav: ByteArray): ApiResult {
+        audioCalls += item to wav
         return audioResults.removeFirstOrNull() ?: defaultAudio
     }
 
@@ -88,7 +89,7 @@ class SyncEngineTest {
 
     private fun build(initial: LayerState = LayerState(brainUrl = "https://brain.example.com", brainToken = "tok", deviceId = "dev-1")) {
         state = MemoryState(initial)
-        audio = AudioFiles(File(tmp.root, "audio"))
+        audio = AudioFiles(File(tmp.root, "audio"), softwareBox())
         val pipeline = LayerPipeline(state, MemoryTimeline(), outbox, "own", { "{}" }, { now })
         val applier = CommandApplier(state, BlockActions(state, UtcDays, "own"), DraftController(state, NullSender(), pipeline, { now }), notifier, "own", { now })
         engine = SyncEngine(state, outbox, audio, api, applier, { now }, { 0.5 })
@@ -111,6 +112,17 @@ class SyncEngineTest {
     @Test fun aPublicCleartextAddressIsSkipped() {
         build(LayerState(brainUrl = "http://example.com", brainToken = "tok"))
         assertTrue(engine.run().skipped)
+    }
+
+    @Test fun whilePausedNothingLeavesOrArrivesAndTheQueueWaits() {
+        outbox.enqueue(event("a"))
+        state.update { it.copy(capture = it.capture.copy(pausedUntilMs = now + HOUR)) }
+        val report = engine.run()
+        assertTrue(report.skipped && report.paused)
+        assertTrue("ni envía eventos ni pide órdenes", api.eventCalls.isEmpty() && api.cursors.isEmpty() && api.audioCalls.isEmpty())
+        assertEquals(1, outbox.count())
+        now += HOUR + 1
+        assertEquals(1, engine.run().eventsSent) // terminada la pausa, sigue donde se quedó
     }
 
     @Test fun sendsPendingEventsAndMarksTheSync() {
@@ -195,7 +207,9 @@ class SyncEngineTest {
         assertEquals(1, report.audioSent)
         assertEquals(0, outbox.count())
         assertNull(audio.file(name))
-        assertEquals(name, api.audioCalls.single().second.name)
+        val sent = api.audioCalls.single().second
+        assertEquals("lo que se envía es el WAV descifrado", "RIFF", String(sent, 0, 4))
+        assertEquals(44 + 3_200, sent.size)
     }
 
     @Test fun anAudioItemWhoseFileVanishedIsDroppedWithoutACall() {
@@ -203,6 +217,18 @@ class SyncEngineTest {
         engine.run()
         assertEquals(0, outbox.count())
         assertTrue(api.audioCalls.isEmpty())
+    }
+
+    @Test fun anAudioItemThatCannotBeDecryptedIsDroppedAndItsFileDeleted() {
+        val name = audio.save(segment())
+        outbox.enqueue(OutboxItem("s1", OutboxItem.Kind.AUDIO, name, now))
+        // Otra clave (la del Keystore se perdió): el archivo ya no se puede abrir.
+        audio = AudioFiles(File(tmp.root, "audio"), softwareBox())
+        engine = SyncEngine(state, outbox, audio, api, CommandApplier(state, BlockActions(state, UtcDays, "own"), DraftController(state, NullSender(), LayerPipeline(state, MemoryTimeline(), outbox, "own", { "{}" }, { now }), { now }), notifier, "own", { now }), { now }, { 0.5 })
+        engine.run()
+        assertEquals(0, outbox.count())
+        assertTrue(api.audioCalls.isEmpty())
+        assertNull(audio.file(name))
     }
 
     @Test fun anAudioNetworkFailureKeepsTheFile() {

@@ -6,6 +6,7 @@ import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.hermesmarcano.zen.layer.core.LayerEvent
 import com.hermesmarcano.zen.layer.core.OutboxItem
+import com.hermesmarcano.zen.layer.core.softwareBox
 import com.hermesmarcano.zen.layer.core.OutboxPolicy
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -148,10 +149,49 @@ class SqliteTimelineTest {
 class SqliteOutboxTest {
     private lateinit var db: LayerDatabase
     private lateinit var outbox: SqliteOutbox
+    private val box = softwareBox()
 
     @Before fun open() {
         db = LayerDatabase(ApplicationProvider.getApplicationContext<Context>(), null)
-        outbox = SqliteOutbox(db, maxItems = 3, maxAgeMs = 10 * DAY)
+        outbox = SqliteOutbox(db, box, maxItems = 3, maxAgeMs = 10 * DAY)
+    }
+
+    private fun storedPayload(id: String): String =
+        db.readableDatabase.rawQuery("SELECT payload FROM outbox WHERE id = ?", arrayOf(id)).use { it.moveToFirst(); it.getString(0) }
+
+    @Test fun eventTextIsEncryptedAtRestAndReadBackIntact() {
+        outbox.enqueue(item("a", 10, payload = "{\"text\":\"cita con el médico\"}"))
+        val raw = storedPayload("a")
+        assertTrue(raw.startsWith("enc1:"))
+        assertFalse("el texto no puede estar en claro en la base", raw.contains("médico"))
+        assertEquals("{\"text\":\"cita con el médico\"}", outbox.due(OutboxItem.Kind.EVENT, 100, 10).single().payload)
+    }
+
+    @Test fun anAudioItemKeepsItsFileNameInThePlain() {
+        outbox.enqueue(item("s", 10, OutboxItem.Kind.AUDIO, "seg-x.wav"))
+        assertEquals("seg-x.wav", storedPayload("s"))
+    }
+
+    @Test fun anEventThatCannotBeDecryptedIsDiscardedInsteadOfBlockingTheQueue() {
+        outbox.enqueue(item("a", 10))
+        val withLostKey = SqliteOutbox(db, softwareBox(), maxItems = 3, maxAgeMs = 10 * DAY)
+        assertTrue(withLostKey.due(OutboxItem.Kind.EVENT, 100, 10).isEmpty())
+        assertEquals("y ya no ocupa sitio", 0, withLostKey.count())
+    }
+
+    @Test fun anEventSealedForAnotherIdIsNotAccepted() {
+        outbox.enqueue(item("a", 10, payload = "uno"))
+        outbox.enqueue(item("b", 20, payload = "dos"))
+        db.writableDatabase.execSQL("UPDATE outbox SET payload = ? WHERE id = 'b'", arrayOf(storedPayload("a")))
+        assertEquals(listOf("a"), outbox.due(OutboxItem.Kind.EVENT, 100, 10).map { it.id })
+    }
+
+    @Test fun retryBookkeepingDoesNotReEncryptOrLosePayload() {
+        outbox.enqueue(item("a", 0, payload = "texto"))
+        val before = storedPayload("a")
+        outbox.markFailed(outbox.due(OutboxItem.Kind.EVENT, Long.MAX_VALUE, 10), 5, 0.5, rejected = false)
+        assertEquals(before, storedPayload("a"))
+        assertEquals("texto", outbox.due(OutboxItem.Kind.EVENT, Long.MAX_VALUE, 10).single().payload)
     }
 
     @After fun close() = db.close()

@@ -11,6 +11,8 @@ import com.hermesmarcano.zen.layer.core.LayerEvent
 import com.hermesmarcano.zen.layer.core.OutboxItem
 import com.hermesmarcano.zen.layer.core.OutboxPolicy
 import com.hermesmarcano.zen.layer.core.OutboxStore
+import com.hermesmarcano.zen.layer.core.SealedText
+import com.hermesmarcano.zen.layer.core.SecretBox
 import com.hermesmarcano.zen.layer.core.TimelineStore
 import org.json.JSONObject
 
@@ -154,9 +156,16 @@ class SqliteTimeline(
     }
 }
 
-/** Cola de envío persistente: sobrevive a que el proceso muera o se reinicie el teléfono. */
+/** Marca interna de un evento de la cola que ya no se pudo descifrar. */
+private const val UNREADABLE = "\u0000no-legible"
+
+/**
+ * Cola de envío persistente: sobrevive a que el proceso muera o se reinicie el teléfono. El texto de los eventos se
+ * guarda cifrado con la clave del Keystore. La memoria (línea de tiempo) NO se cifra: necesita búsqueda de texto completo.
+ */
 class SqliteOutbox(
     private val helper: LayerDatabase,
+    private val secrets: SecretBox,
     private val maxItems: Int = OutboxPolicy.MAX_ITEMS,
     private val maxAgeMs: Long = OutboxPolicy.MAX_AGE_MS,
 ) : OutboxStore {
@@ -164,10 +173,16 @@ class SqliteOutbox(
         helper.writableDatabase.insertWithOnConflict("outbox", null, values(item), SQLiteDatabase.CONFLICT_REPLACE)
     }
 
-    override fun due(kind: OutboxItem.Kind, nowMs: Long, limit: Int): List<OutboxItem> = query(
-        "kind = ? AND not_before <= ? ORDER BY created_at ASC LIMIT ?",
-        arrayOf(kind.name, nowMs.toString(), limit.coerceAtLeast(1).toString()),
-    )
+    override fun due(kind: OutboxItem.Kind, nowMs: Long, limit: Int): List<OutboxItem> {
+        val rows = query(
+            "kind = ? AND not_before <= ? ORDER BY created_at ASC LIMIT ?",
+            arrayOf(kind.name, nowMs.toString(), limit.coerceAtLeast(1).toString()),
+        )
+        // Un evento que ya no se puede descifrar (clave perdida o archivo manipulado) no sirve para nada: se descarta.
+        val (readable, lost) = rows.partition { it.payload != UNREADABLE }
+        if (lost.isNotEmpty()) remove(lost.map { it.id })
+        return readable
+    }
 
     override fun markFailed(items: List<OutboxItem>, nowMs: Long, random: Double, rejected: Boolean): List<OutboxItem> {
         if (items.isEmpty()) return emptyList()
@@ -181,7 +196,7 @@ class SqliteOutbox(
                     db.delete("outbox", "id = ?", arrayOf(item.id))
                     dropped += next
                 } else {
-                    db.update("outbox", values(next), "id = ?", arrayOf(item.id))
+                    db.update("outbox", values(next, includePayload = false), "id = ?", arrayOf(item.id))
                 }
             }
             db.setTransactionSuccessful()
@@ -231,15 +246,26 @@ class SqliteOutbox(
             val out = ArrayList<OutboxItem>(c.count)
             while (c.moveToNext()) {
                 val kind = OutboxItem.Kind.entries.firstOrNull { it.name == c.getString(1) } ?: continue
-                out += OutboxItem(c.getString(0), kind, c.getString(2), c.getLong(3), c.getInt(4), c.getInt(5), c.getLong(6))
+                val id = c.getString(0)
+                out += OutboxItem(id, kind, readPayload(id, kind, c.getString(2)), c.getLong(3), c.getInt(4), c.getInt(5), c.getLong(6))
             }
             out
         }
 
-    private fun values(item: OutboxItem) = ContentValues().apply {
+    /** El texto de un evento va cifrado (atado a su id); el de un audio es solo el nombre de su archivo. */
+    private fun sealPayload(item: OutboxItem): String =
+        if (item.kind == OutboxItem.Kind.EVENT) secrets.seal(item.payload, "outbox:${item.id}") else item.payload
+
+    private fun readPayload(id: String, kind: OutboxItem.Kind, stored: String): String = when {
+        kind != OutboxItem.Kind.EVENT -> stored
+        !SealedText.isSealed(stored) -> stored // de una versión anterior: se envía y se borra
+        else -> secrets.open(stored, "outbox:$id") ?: UNREADABLE
+    }
+
+    private fun values(item: OutboxItem, includePayload: Boolean = true) = ContentValues().apply {
         put("id", item.id)
         put("kind", item.kind.name)
-        put("payload", item.payload)
+        if (includePayload) put("payload", sealPayload(item))
         put("created_at", item.createdAtMs)
         put("attempts", item.attempts)
         put("rejections", item.rejections)

@@ -256,17 +256,17 @@ class BrainClientTest {
     }
 
     @Test fun uploadsAudioWithItsMetadata() {
-        val file = tmp.newFile("seg.wav").apply { writeBytes(ByteArray(44) + ByteArray(32_000) { 7 }) } // 1 s a 16 kHz mono
+        val wav = ByteArray(44) + ByteArray(32_000) { 7 } // 1 s a 16 kHz mono
         server.on("/v1/audio") { Response(200) }
-        val audioItem = OutboxItem("seg1", OutboxItem.Kind.AUDIO, file.name, 5_000L)
-        assertEquals(ApiResult.Ok, client.postAudio(cfg(), audioItem, file))
+        val audioItem = OutboxItem("seg1", OutboxItem.Kind.AUDIO, "seg.wav", 5_000L)
+        assertEquals(ApiResult.Ok, client.postAudio(cfg(), audioItem, wav))
         val req = server.seen.single()
         assertEquals("audio/wav", req.headers["content-type"])
         assertEquals("seg1", req.headers["x-zen-segment-id"])
         assertEquals("5000", req.headers["x-zen-started-at"])
         assertEquals("1000", req.headers["x-zen-duration-ms"])
         assertEquals("Bearer tok", req.headers["authorization"])
-        assertTrue(req.body.contentEquals(file.readBytes()))
+        assertTrue(req.body.contentEquals(wav))
     }
 
     @Test fun fetchesAndParsesCommands() {

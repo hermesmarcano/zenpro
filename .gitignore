@@ -8,3 +8,7 @@ xcuserdata/
 
 # macOS
 .DS_Store
+
+# Python (adaptador brain/)
+__pycache__/
+*.pyc

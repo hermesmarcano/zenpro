@@ -41,11 +41,14 @@ object LayerLive {
 /** Todas las piezas de la capa, creadas una vez por proceso. Los servicios la sacan de [ZenApp][com.hermesmarcano.zen.ZenApp]. */
 class LayerRuntime(private val app: Application) {
     val dayClock = SystemDayClock()
-    val state = LayerStateRepository(File(app.filesDir, "layer/layer.json"))
+
+    /** Una sola clave del Keystore para el token, la cola de envío y el audio pendiente. */
+    private val secrets = LayerSecrets.create()
+    val state = LayerStateRepository(File(app.filesDir, "layer/layer.json"), secrets)
     val database: LayerDatabase by lazy { LayerDatabase(app) }
     val timeline: TimelineStore by lazy { SqliteTimeline(database) }
-    val outbox: OutboxStore by lazy { SqliteOutbox(database) }
-    val audioFiles = AudioFiles(File(app.filesDir, "layer/audio"))
+    val outbox: OutboxStore by lazy { SqliteOutbox(database, secrets) }
+    val audioFiles = AudioFiles(File(app.filesDir, "layer/audio"), secrets)
 
     /** Un solo hilo para guardar y sincronizar: conserva el orden y deja libre el hilo principal. */
     val io: ExecutorService = Executors.newSingleThreadExecutor { r -> Thread(r, "zen-layer-io").apply { isDaemon = true } }

@@ -110,17 +110,26 @@ class BrainUrlTest {
         assertEquals("https://brain.example.com", ok("HTTPS://Brain.Example.COM"))
     }
 
-    @Test fun cleartextOnlyToPrivateHosts() {
+    @Test fun cleartextOnlyWhereTheTrafficIsAlreadyEncrypted() {
         assertEquals(BrainUrl.Error.CLEARTEXT_NOT_ALLOWED, errorOf("http://example.com"))
         assertEquals(BrainUrl.Error.CLEARTEXT_NOT_ALLOWED, errorOf("http://8.8.8.8:3030"))
-        for (host in listOf("192.168.1.5:8080", "10.0.0.5", "172.16.0.1", "172.31.255.1", "100.64.0.1", "100.127.9.9", "127.0.0.1", "localhost:3030", "mybox.local", "pc.tail1234.ts.net")) {
+        for (host in listOf("100.64.0.1", "100.127.9.9", "127.0.0.1", "127.9.9.9:80", "localhost:3030", "pc.tail1234.ts.net")) {
             assertEquals("http://$host", ok("http://$host"))
         }
         assertEquals("http://[::1]:8080", ok("http://[::1]:8080"))
+        assertEquals("http://[fd7a:115c:a1e0::1]:8080", ok("http://[fd7a:115c:a1e0::1]:8080"))
     }
 
-    @Test fun addressesJustOutsidePrivateRangesAreRejected() {
-        for (host in listOf("172.15.0.1", "172.32.0.1", "100.63.0.1", "100.128.0.1", "192.169.0.1", "11.0.0.1")) {
+    @Test fun aLocalNetworkIsNotAnEncryptedPath() {
+        // En una wifi cualquiera, el token y lo enviado viajarían en claro: solo vale https:// o Tailscale.
+        for (host in listOf("192.168.1.5:8080", "10.0.0.5", "172.16.0.1", "172.31.255.1", "mybox.local", "[fe80::1]", "[fc00::1]")) {
+            assertEquals(host, BrainUrl.Error.CLEARTEXT_NOT_ALLOWED, errorOf("http://$host"))
+            assertEquals("https://$host", ok("https://$host")) // con TLS sí
+        }
+    }
+
+    @Test fun addressesJustOutsideTheAllowedRangesAreRejected() {
+        for (host in listOf("172.15.0.1", "100.63.255.255", "100.128.0.1", "192.169.0.1", "11.0.0.1", "126.0.0.1", "128.0.0.1", "evilts.net", "ts.net.evil.com")) {
             assertEquals(host, BrainUrl.Error.CLEARTEXT_NOT_ALLOWED, errorOf("http://$host"))
         }
     }
@@ -209,7 +218,8 @@ class DraftBoardTest {
 
 class CommandPolicyTest {
     private val own = "com.hermesmarcano.zen"
-    private fun verdict(c: BrainCommand, seen: Set<String> = emptySet()) = CommandPolicy.check(c, own, seen)
+    private fun verdict(c: BrainCommand, seen: Set<String> = emptySet(), blockable: Set<String> = setOf("com.zhiliaoapp.musically")) =
+        CommandPolicy.check(c, own, seen, blockable)
 
     @Test fun acceptsWellFormedCommands() {
         assertEquals(CommandPolicy.Verdict.ACCEPT, verdict(BrainCommand.DraftReply("1", "wa|marta", "ok")))

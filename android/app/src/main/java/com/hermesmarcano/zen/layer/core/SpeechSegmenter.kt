@@ -2,6 +2,9 @@ package com.hermesmarcano.zen.layer.core
 
 import kotlin.math.sqrt
 
+/** Duración máxima de un tramo de voz. El servidor rechaza más de 30 s: así nunca se envía algo que no vaya a aceptar. */
+const val MAX_SEGMENT_MS = 29_000
+
 /** Un tramo de voz recortado del flujo continuo del micrófono. [startSample] es el índice absoluto de su primera muestra. */
 class PcmSegment(val samples: ShortArray, val startSample: Long, val sampleRate: Int) {
     val durationMs: Long get() = samples.size * 1000L / sampleRate
@@ -21,7 +24,7 @@ class SpeechSegmenter(
     preRollMs: Int = 300,
     hangoverMs: Int = 900,
     minSpeechMs: Int = 400,
-    maxSegmentMs: Int = 60_000,
+    maxSegmentMs: Int = MAX_SEGMENT_MS,
     startMs: Int = 60,
     private val minThreshold: Double = 350.0,
     private val thresholdFactor: Double = 3.0,

@@ -8,6 +8,7 @@ on:
       - claude/xiaomi-note8-layer
     paths:
       - "android/**"
+      - "brain/**"
       - ".github/workflows/android-xiaomi.yml"
   workflow_dispatch:
 
@@ -15,6 +16,26 @@ permissions:
   contents: read
 
 jobs:
+  # El adaptador del servidor (brain/): solo biblioteca estándar, sin dependencias que instalar.
+  brain-tests:
+    if: github.ref == 'refs/heads/claude/xiaomi-note8-layer'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.13"]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Pruebas del adaptador
+        working-directory: brain
+        run: python -m unittest discover -s . -t . -p "test_*.py"
+
   build-and-test:
     # Si este archivo llegara a otra rama por error, no hace nada fuera de la rama de la variante.
     if: github.ref == 'refs/heads/claude/xiaomi-note8-layer'
@@ -80,7 +101,7 @@ jobs:
   publish:
     permissions:
       contents: write # solo para publicar el APK en la pre-release `xiaomi-latest`
-    needs: build-and-test
+    needs: [build-and-test, brain-tests]
     if: github.event_name == 'push' && github.ref == 'refs/heads/claude/xiaomi-note8-layer'
     runs-on: ubuntu-latest
     concurrency:

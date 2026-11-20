@@ -2,6 +2,9 @@ package com.hermesmarcano.zen.layer.core
 
 import java.io.IOException
 
+/** Caja de cifrado de software para pruebas: cada llamada, una clave nueva. */
+internal fun softwareBox(): SecretBox = AesGcmSecretBox(SoftwareKeys.random().let { key -> { key } })
+
 internal const val MIN = 60_000L
 internal const val HOUR = 60 * MIN
 internal const val DAY = 24 * HOUR

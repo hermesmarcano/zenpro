@@ -30,6 +30,8 @@ import org.robolectric.annotation.GraphicsMode
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(application = ZenApp::class, sdk = [34], qualifiers = "w411dp-h891dp-xxhdpi")
 class LayerNavigationTest {
+    init { useSoftwareSecrets() }
+
     @get:Rule val rule = createAndroidComposeRule<MainActivity>()
     private val app: ZenApp = ApplicationProvider.getApplicationContext()
 
@@ -83,6 +85,8 @@ class LayerNavigationTest {
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(application = ZenApp::class, sdk = [34], qualifiers = "w411dp-h891dp-xxhdpi")
 class LayerRouteTest {
+    init { useSoftwareSecrets() }
+
     @get:Rule val rule = androidx.compose.ui.test.junit4.createEmptyComposeRule()
     private val app: ZenApp = ApplicationProvider.getApplicationContext()
 

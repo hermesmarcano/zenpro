@@ -16,7 +16,9 @@ import kotlin.random.Random
  * aplica. Corre en el trabajo periódico y cuando hay algo nuevo y red. No hace nada si no hay cerebro configurado.
  *
  * Reglas que importan:
- *  - Sin red (o 5xx) NO se pierde nada: se pospone con espera creciente y los elementos se conservan hasta 3 días.
+ *  - Sin red (o 5xx) NO se pierde nada: se pospone con espera creciente y los elementos se conservan hasta 24 horas.
+ *  - En pausa (la del usuario, o la que pide el cerebro) no sale NADA hacia el servidor ni se le pide nada: es el
+ *    interruptor de corte, y no depende de que el servidor lo recuerde. Lo encolado espera a que termine la pausa.
  *  - Si el servidor rechaza un lote (4xx), se reenvía uno a uno para aislar el elemento malo; con 5 rechazos de un
  *    mismo elemento se descarta (y se borra su audio).
  *  - Un token rechazado (401/403) detiene la pasada y queda anotado para que el usuario lo vea.
@@ -32,6 +34,7 @@ class SyncEngine(
 ) {
     data class Report(
         val skipped: Boolean = false,
+        val paused: Boolean = false,
         val eventsSent: Int = 0,
         val audioSent: Int = 0,
         val commandsApplied: Int = 0,
@@ -42,6 +45,7 @@ class SyncEngine(
 
     fun run(): Report {
         val s = state.current
+        if (s.capture.isPaused(clock())) return Report(skipped = true, paused = true)
         val base = (BrainUrl.validate(s.brainUrl) as? BrainUrl.Result.Ok)?.baseUrl
         if (base == null || s.brainToken.isBlank()) return Report(skipped = true)
         // Dos pasadas a la vez (trabajo periódico + envío inmediato) enviarían duplicados.
@@ -53,7 +57,7 @@ class SyncEngine(
             pass.audio()
             pass.pullCommands(s.commandCursor)
             pass.finish()
-            return Report(false, pass.eventsSent, pass.audioSent, pass.commandsApplied, pass.error)
+            return Report(false, false, pass.eventsSent, pass.audioSent, pass.commandsApplied, pass.error)
         } finally {
             running.set(false)
         }
@@ -123,12 +127,14 @@ class SyncEngine(
             repeat(MAX_AUDIO) {
                 if (unauthorized) return
                 val item = outbox.due(OutboxItem.Kind.AUDIO, clock(), OutboxPolicy.AUDIO_BATCH).firstOrNull() ?: return
-                val file = audio.file(item.payload)
-                if (file == null) {
-                    outbox.remove(listOf(item.id)) // el archivo ya no existe: no hay nada que enviar
+                val wav = audio.read(item.payload)
+                if (wav == null) {
+                    // El archivo ya no existe o no se puede descifrar (clave perdida): no hay nada que enviar.
+                    audio.delete(item.payload)
+                    outbox.remove(listOf(item.id))
                     return@repeat
                 }
-                when (val r = api.postAudio(cfg, item, file)) {
+                when (val r = api.postAudio(cfg, item, wav)) {
                     ApiResult.Ok -> {
                         reached = true
                         outbox.remove(listOf(item.id))

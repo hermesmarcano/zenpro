@@ -32,8 +32,9 @@ object Backoff {
 }
 
 object OutboxPolicy {
-    const val MAX_ITEMS = 5_000
-    const val MAX_AGE_MS = 3L * 24 * 60 * 60 * 1000
+    /** Lo que espera en el teléfono es lo más sensible: se retiene poco (24 h o 500 elementos). */
+    const val MAX_ITEMS = 500
+    const val MAX_AGE_MS = 24L * 60 * 60 * 1000
     const val EVENT_BATCH = 100
     /** Un tramo de audio pesa mucho más que un evento: se envía de uno en uno. */
     const val AUDIO_BATCH = 1
@@ -67,8 +68,10 @@ object OutboxPolicy {
 }
 
 /**
- * Valida la dirección del cerebro. HTTPS siempre vale; HTTP solo hacia la propia red (localhost, LAN,
- * Tailscale), porque ahí el tráfico no cruza internet en claro. Sin credenciales dentro de la URL.
+ * Valida la dirección del cerebro. HTTPS siempre vale. HTTP solo cuando el tráfico no sale en claro de todos modos:
+ * este mismo teléfono (localhost) o la red cifrada de Tailscale (WireGuard: 100.64.0.0/10, `*.ts.net`). Una red local
+ * (192.168.x.x, 10.x.x.x, `*.local`) NO vale: en una wifi cualquiera podría leer el token y lo que se envía.
+ * Sin credenciales dentro de la URL.
  */
 object BrainUrl {
     enum class Error { EMPTY, MALFORMED, NO_HOST, CREDENTIALS_IN_URL, CLEARTEXT_NOT_ALLOWED }
@@ -91,22 +94,21 @@ object BrainUrl {
         val host = uri.host?.lowercase()?.removePrefix("[")?.removeSuffix("]")
         if (host.isNullOrEmpty()) return Result.Invalid(Error.NO_HOST)
         if (uri.userInfo != null) return Result.Invalid(Error.CREDENTIALS_IN_URL)
-        if (scheme == "http" && !isPrivateHost(host)) return Result.Invalid(Error.CLEARTEXT_NOT_ALLOWED)
+        if (scheme == "http" && !isEncryptedPath(host)) return Result.Invalid(Error.CLEARTEXT_NOT_ALLOWED)
         val shownHost = if (':' in host) "[$host]" else host // IPv6 va entre corchetes
         val port = if (uri.port != -1) ":${uri.port}" else ""
         val path = (uri.rawPath ?: "").trimEnd('/')
         return Result.Ok("$scheme://$shownHost$port$path")
     }
 
-    internal fun isPrivateHost(host: String): Boolean {
-        if (host == "localhost" || host == "::1" || host.endsWith(".local") || host.endsWith(".ts.net")) return true
+    /** ¿Llegar a este host por HTTP deja el tráfico cifrado (o dentro del propio teléfono)? */
+    internal fun isEncryptedPath(host: String): Boolean {
+        if (host == "localhost" || host == "::1" || host.endsWith(".ts.net")) return true
+        if (host.startsWith("fd7a:115c:a1e0:")) return true // IPv6 de Tailscale
         val parts = host.split('.')
         if (parts.size != 4) return false
         val n = parts.map { it.toIntOrNull() ?: return false }
         if (n.any { it !in 0..255 }) return false
-        return n[0] == 10 || n[0] == 127 ||
-            (n[0] == 172 && n[1] in 16..31) ||
-            (n[0] == 192 && n[1] == 168) ||
-            (n[0] == 100 && n[1] in 64..127) // Tailscale
+        return n[0] == 127 || (n[0] == 100 && n[1] in 64..127) // este teléfono, o Tailscale
     }
 }
