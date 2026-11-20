@@ -140,6 +140,18 @@ zenctl check                 # configuración y permisos
 - **Evento descartado por cortacircuitos, error del modelo o tiempo agotado**: queda como visto y **no se reintenta** (no se gasta dos veces).
 - **Requiere Python ≥ 3.10**. Las pruebas se ejecutan aquí con 3.13.
 
+## Prueba de integración con la app real
+
+Además de las pruebas unitarias, `android/.../link/BrainLiveTest.kt` ejecuta el **cliente real de la app** (`BrainClient`, `EventJson`,
+`WavEncoder`, `CommandPolicy`) contra un adaptador de verdad: manda una notificación (y la reenvía), un tramo de voz, recoge el borrador, lo valida con la
+política de la app, comprueba el cursor y que un token malo sale como «rechazado». No corre en el CI normal (se omite sin adaptador):
+
+```bash
+# 1) un adaptador de pruebas (con un Hermes simulado) en 127.0.0.1:18790; el token queda en <dir>/ready
+# 2) en android/:
+ZEN_BRAIN_LIVE_URL=http://127.0.0.1:18790 ZEN_BRAIN_LIVE_TOKEN=<token> ./gradlew testDebugUnitTest --tests '*BrainLiveTest'
+```
+
 ## Pruebas
 
 ```bash
