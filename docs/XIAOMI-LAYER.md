@@ -65,6 +65,19 @@ Los nombres exactos de los menús cambian entre versiones de MIUI; si alguno no 
 
 1. **Instala el APK** de la pre-release **`xiaomi-latest`** (archivo `zen-xiaomi.apk`; ver también [`ANDROID.md`](ANDROID.md)). MIUI avisará de «instalar apps desconocidas» y puede mostrar un
    análisis de seguridad: es normal en un APK fuera de Play.
+
+   **Si sale «O app foi bloqueado para proteger seu dispositivo» / «App bloqueada para proteger tu dispositivo» (Google Play Protect):**
+   es la *protección mejorada contra fraude* de Play Protect. Bloquea la instalación de apps que llegan desde un navegador, WhatsApp o
+   un gestor de archivos y piden permisos sensibles (accesibilidad, acceso a notificaciones, SMS), y esta app pide los dos primeros porque
+   para eso existe. Google la tiene activa en algunos países (entre ellos Brasil, India, Singapur, Tailandia, Filipinas, Kenia, Nigeria,
+   Sudáfrica, Vietnam y Hong Kong) y no depende de la app: pasaría con cualquier APK que declare esos servicios. Dos salidas:
+   - **Apagar el análisis un rato:** Google Play → tu foto de perfil → **Play Protect** → engranaje ⚙ → desactiva el interruptor de analizar/verificar
+     apps (en portugués, «Verificar apps com o Play Protect») → instala el APK → **vuelve a activarlo**. Si después Play Protect avisa de la
+     app, elige conservarla («Manter»).
+   - **Instalar por cable con `adb`** (no es una descarga de internet): con *Depuración USB* e *Instalar vía USB* activados en Opciones de
+     desarrollador, `adb install -r zen-xiaomi.apk`. Es lo más probable que funcione sin tocar Play Protect, pero no está confirmado por Google.
+   Con Android 13 o superior, además, hay que abrir *Información de la app → ⋮ → Permitir ajustes restringidos* antes de poder activar la
+   accesibilidad y el acceso a notificaciones (el Redmi Note 8 con Android 11 no lo necesita).
 2. Abre **ZEN Xiaomi** → **Ajustes → Abrir la capa**. Ahí, arriba, la sección **Estado** te dice qué falta y tiene un botón para cada cosa.
 3. **Accesibilidad** (para leer la pantalla y bloquear): Ajustes del teléfono → *Ajustes adicionales → Accesibilidad →
    Servicios descargados → «ZEN Xiaomi · capa»* → activar. MIUI mostrará un aviso fuerte: lee la descripción, es el texto exacto de lo que hace.
