@@ -6,7 +6,10 @@ import android.content.ClipboardManager
 import android.content.Context
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -96,8 +99,11 @@ fun LayerScreen(
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { refresh++ }
     val health = remember(state, refresh) { LayerHealth.evaluate(LayerStatus.healthInput(context)) }
 
+    // El aviso va PEGADO ABAJO, sobre lo que se esté viendo: antes salía arriba del todo y quien pulsaba «Guardar» en la
+    // sección Cerebro (abajo) no veía nada, ni siquiera un error. Un toque lo cierra.
+    Box(modifier = Modifier.fillMaxSize().safeDrawingPadding()) {
     Column(
-        modifier = Modifier.fillMaxSize().safeDrawingPadding().verticalScroll(rememberScrollState()).padding(16.dp),
+        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -108,8 +114,6 @@ fun LayerScreen(
             "ZEN puede observar tu teléfono para recordar lo que importa y cumplir los límites que tú pongas. " +
                 "Todo empieza apagado, cada fuente se enciende por separado y nada sale del teléfono si no configuras un cerebro.",
         )
-        message?.let { Text(it, color = MaterialTheme.colorScheme.primary, fontSize = 14.sp) }
-
         HealthSection(env, health) { refresh++ }
         PauseSection(env, state)
         CaptureSection(env, state, health) { refresh++ }
@@ -119,6 +123,18 @@ fun LayerScreen(
         MemorySection(env, state)
         BrainSection(env, state)
         Hint("La guía de instalación y el protocolo con el cerebro están en docs/XIAOMI-LAYER.md.")
+    }
+    message?.let { text ->
+        Surface(
+            color = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(12.dp),
+            shadowElevation = 8.dp,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary),
+            modifier = Modifier.align(Alignment.BottomCenter).padding(12.dp).fillMaxWidth().clickable { message = null },
+        ) {
+            Text(text, color = MaterialTheme.colorScheme.onSurface, fontSize = 14.sp, modifier = Modifier.padding(14.dp))
+        }
+    }
     }
 }
 

@@ -456,6 +456,27 @@ class LayerScreenTest {
         assertEquals("", runtime.state.current.brainUrl)
     }
 
+    @Test fun anExamplePlaceholderLeftInTheAddressIsExplainedNotSilentlyRejected() {
+        show()
+        node("Dirección del cerebro").typeText("https://ubuntu-8gb-nbg1-1.<tu-tailnet>.ts.net")
+        node("Token").typeText("secreto")
+        node("Guardar").tap()
+        compose.onNodeWithText("caracteres que no valen", substring = true).assertIsDisplayed()
+        assertEquals("", runtime.state.current.brainUrl)
+    }
+
+    @Test fun theFeedbackMessageIsDismissedWithATap() {
+        show()
+        node("Dirección del cerebro").typeText("http://example.com")
+        node("Token").typeText("secreto")
+        node("Guardar").tap()
+        val message = compose.onNodeWithText("http:// solo se acepta por Tailscale", substring = true)
+        message.assertIsDisplayed()
+        message.performClick()
+        compose.mainClock.advanceTimeByFrame()
+        assertTrue(compose.onAllNodesWithText("http:// solo se acepta por Tailscale", substring = true).fetchSemanticsNodes().isEmpty())
+    }
+
     @Test fun aLocalNetworkAddressIsNotAcceptedOverPlainHttp() {
         show()
         node("Dirección del cerebro").typeText("http://192.168.1.20:8787")

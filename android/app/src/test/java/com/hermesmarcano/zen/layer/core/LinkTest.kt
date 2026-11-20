@@ -128,6 +128,13 @@ class BrainUrlTest {
         }
     }
 
+    @Test fun placeholdersSpacesAndQuotesGetADedicatedError() {
+        for (raw in listOf("https://ubuntu.<tu-tailnet>.ts.net", "https://mi equipo.ts.net", "\"https://a.ts.net\"", "https://a.ts.net'", "https://a{b}.ts.net")) {
+            assertEquals(raw, BrainUrl.Error.ILLEGAL_CHARACTERS, errorOf(raw))
+        }
+        assertEquals("los espacios de los extremos se recortan", "https://a.ts.net", ok("  https://a.ts.net  "))
+    }
+
     @Test fun leadingZerosInAnOctetAreNotAccepted() {
         // «100.064.0.1» podría leerse como octal en otros sitios y apuntar a una dirección en claro distinta.
         for (host in listOf("100.064.0.1", "127.000.000.001", "100.64.00.1")) {
@@ -144,7 +151,8 @@ class BrainUrlTest {
     @Test fun invalidInputs() {
         assertEquals(BrainUrl.Error.EMPTY, errorOf(""))
         assertEquals(BrainUrl.Error.EMPTY, errorOf("   "))
-        assertEquals(BrainUrl.Error.MALFORMED, errorOf("not a url"))
+        assertEquals("un espacio dentro tiene su propio aviso", BrainUrl.Error.ILLEGAL_CHARACTERS, errorOf("not a url"))
+        assertEquals(BrainUrl.Error.MALFORMED, errorOf("noesunaurl"))
         assertEquals(BrainUrl.Error.MALFORMED, errorOf("ftp://example.com"))
         assertEquals(BrainUrl.Error.MALFORMED, errorOf("example.com"))
         assertEquals(BrainUrl.Error.NO_HOST, errorOf("https:///path"))

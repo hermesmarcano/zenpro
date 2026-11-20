@@ -74,7 +74,7 @@ object OutboxPolicy {
  * Sin credenciales dentro de la URL.
  */
 object BrainUrl {
-    enum class Error { EMPTY, MALFORMED, NO_HOST, CREDENTIALS_IN_URL, CLEARTEXT_NOT_ALLOWED }
+    enum class Error { EMPTY, MALFORMED, ILLEGAL_CHARACTERS, NO_HOST, CREDENTIALS_IN_URL, CLEARTEXT_NOT_ALLOWED }
 
     sealed interface Result {
         data class Ok(val baseUrl: String) : Result
@@ -84,6 +84,8 @@ object BrainUrl {
     fun validate(raw: String): Result {
         val text = raw.trim()
         if (text.isEmpty()) return Result.Invalid(Error.EMPTY)
+        // «<tu-tailnet>» de un ejemplo, un espacio o una comilla copiados por error: se avisa con una frase clara.
+        if (text.any { it.isWhitespace() || it in "<>\"'`{}|\\^" }) return Result.Invalid(Error.ILLEGAL_CHARACTERS)
         val uri = try {
             URI(text)
         } catch (_: Exception) {

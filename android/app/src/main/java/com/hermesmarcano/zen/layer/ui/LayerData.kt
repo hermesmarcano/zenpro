@@ -236,7 +236,9 @@ internal fun BrainSection(env: LayerEnv, state: LayerState) {
 
 private fun urlError(error: BrainUrl.Error): String = when (error) {
     BrainUrl.Error.EMPTY -> "Escribe la dirección del cerebro."
-    BrainUrl.Error.MALFORMED -> "La dirección no es válida: debe empezar por https:// o http://."
+    BrainUrl.Error.MALFORMED -> "La dirección no es válida: debe ser como https://mi-equipo.mi-red.ts.net (empieza por https:// o http://)."
+    BrainUrl.Error.ILLEGAL_CHARACTERS ->
+        "La dirección tiene caracteres que no valen (como < > o espacios). ¿Dejaste el texto de ejemplo de la guía, como <tu-tailnet>? Debe ser el nombre real, por ejemplo https://mi-equipo.mi-red.ts.net"
     BrainUrl.Error.NO_HOST -> "Falta el nombre del servidor en la dirección."
     BrainUrl.Error.CREDENTIALS_IN_URL -> "No pongas usuario ni contraseña en la dirección: usa el campo Token."
     BrainUrl.Error.CLEARTEXT_NOT_ALLOWED -> "http:// solo se acepta por Tailscale (100.x.x.x, *.ts.net) o en este teléfono (localhost): en una red local cualquiera podría leerlo. Usa https://."

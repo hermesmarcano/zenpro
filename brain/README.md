@@ -74,7 +74,11 @@ algún directorio donde viven puede ser escrito por otros.
 tailscale serve --bg --https=443 http://127.0.0.1:8787
 ```
 
-En la app: *Capa → Cerebro →* `https://<tu-equipo>.<tu-tailnet>.ts.net` y el token. **No uses `tailscale funnel`**: abriría el
+En la app: *Capa → Cerebro →* la dirección y el token. La dirección es `https://` + el nombre completo de tu servidor en la tailnet,
+**sin los símbolos `<` `>`** (son marcadores de este ejemplo: `https://<equipo>.<tailnet>.ts.net` hay que cambiarlo entero por algo como
+`https://mi-servidor.tail1b2c3.ts.net`). Ese nombre sale de `tailscale status --json | jq -r .Self.DNSName` (quita el punto final) o de
+`tailscale serve status`. Necesita **MagicDNS** y **HTTPS Certificates** activados en la consola de Tailscale (sección DNS). Si dejas un
+`<…>` en el campo, la app lo dice («caracteres que no valen»). **No uses `tailscale funnel`**: abriría el
 adaptador a internet. Todo llega al adaptador como `127.0.0.1`, así que no hay límite por IP: el acceso lo decide la tailnet (usa ACLs
 para que solo tu teléfono llegue a ese puerto).
 
