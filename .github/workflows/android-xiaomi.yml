@@ -1,0 +1,106 @@
+name: Android Xiaomi CI
+
+# VARIANTE PERSONAL (rama claude/xiaomi-note8-layer): CI, artefacto y release propios, separados de la app normal.
+# Nunca publica en `android-latest` (esa es la app normal). Ver CLAUDE.md, «Variante personal».
+on:
+  push:
+    branches:
+      - claude/xiaomi-note8-layer
+    paths:
+      - "android/**"
+      - ".github/workflows/android-xiaomi.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    # Si este archivo llegara a otra rama por error, no hace nada fuera de la rama de la variante.
+    if: github.ref == 'refs/heads/claude/xiaomi-note8-layer'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Tests (JVM)
+        run: ./gradlew testDebugUnitTest --console=plain
+
+      - name: Lint
+        run: ./gradlew lintDebug --console=plain
+
+      - name: APK
+        run: ./gradlew assembleRelease --console=plain
+
+      - name: Verificar firma, manifiesto e identidad de la variante
+        run: |
+          APK=app/build/outputs/apk/release/app-release.apk
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          "$BT/apksigner" verify --verbose "$APK"
+          "$BT/aapt2" dump badging "$APK" | grep -E "^package:|targetSdkVersion|sdkVersion|launchable-activity|application-label:"
+          # Guarda de separación: este APK NO puede ser la app normal (la pisaría al instalarlo).
+          PKG=$("$BT/aapt2" dump badging "$APK" | sed -n "s/^package: name='\([^']*\)'.*/\1/p")
+          if [ "$PKG" != "com.hermesmarcano.zen.xiaomi" ]; then
+            echo "::error::El APK es '$PKG', no la variante com.hermesmarcano.zen.xiaomi. Esta rama no debe usar el ID de la app normal."
+            exit 1
+          fi
+          cp "$APK" zen-xiaomi.apk
+
+      - name: Subir APK como artefacto
+        uses: actions/upload-artifact@v4
+        with:
+          name: zen-xiaomi-apk
+          path: android/zen-xiaomi.apk
+          if-no-files-found: error
+
+      - name: Informes de test y lint
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-xiaomi-reports
+          path: |
+            android/app/build/reports
+            android/app/build/test-results
+          if-no-files-found: ignore
+
+  # Serializado y con su propia etiqueta: `xiaomi-latest`. Nunca toca `android-latest`.
+  publish:
+    permissions:
+      contents: write # solo para publicar el APK en la pre-release `xiaomi-latest`
+    needs: build-and-test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/claude/xiaomi-note8-layer'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: xiaomi-release
+      cancel-in-progress: false
+    steps:
+      - name: Descargar APK
+        uses: actions/download-artifact@v4
+        with:
+          name: zen-xiaomi-apk
+
+      # Enlace estable: https://github.com/<repo>/releases/tag/xiaomi-latest
+      - name: Publicar APK en la pre-release xiaomi-latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release delete xiaomi-latest --yes --cleanup-tag || true
+          gh release create xiaomi-latest zen-xiaomi.apk \
+            --prerelease \
+            --target "$GITHUB_SHA" \
+            --title "ZEN Xiaomi (variante personal, última compilación)" \
+            --notes "APK de la variante personal (ID com.hermesmarcano.zen.xiaomi): se instala junto a ZEN normal sin tocarlo. Commit $GITHUB_SHA. Guía: docs/XIAOMI-LAYER.md"

@@ -9,7 +9,9 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.hermesmarcano.zen"
+        // VARIANTE PERSONAL: otro ID que la app normal (com.hermesmarcano.zen), así se instalan juntas sin tocarse
+        // los datos, los permisos ni los servicios. El `namespace` (arriba) se queda igual: es el del código, no el de la app.
+        applicationId = "com.hermesmarcano.zen.xiaomi"
         minSdk = 26
         targetSdk = 35
         // Android solo instala encima una versión con versionCode igual o mayor. Se usa la hora de la
@@ -17,7 +19,7 @@ android {
         // que antes (número de ejecución de CI vs. 1 local) podían quedar "por debajo" y no instalarse.
         val build = System.getenv("ZEN_VERSION_CODE")?.toIntOrNull() ?: (System.currentTimeMillis() / 60_000L).toInt()
         versionCode = build
-        versionName = "0.3.0"
+        versionName = "0.3.0-xiaomi"
     }
 
     // Clave SOLO para instalar por APK (sideload). Es pública a propósito: sirve para que

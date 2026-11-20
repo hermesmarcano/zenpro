@@ -170,8 +170,9 @@ private fun HealthSection(env: LayerEnv, health: List<HealthItem>, onChanged: ()
                         ActionButton("Ya lo hice") { env.save { it.copy(autostartConfirmed = true) } }
                     }
                     "secure_settings" -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(ADB_GRANT, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        ActionButton("Copiar el comando") { copy(env.context, ADB_GRANT); env.say("Comando copiado.") }
+                        val command = adbGrantCommand(env.context.packageName)
+                        Text(command, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        ActionButton("Copiar el comando") { copy(env.context, command); env.say("Comando copiado.") }
                     }
                 }
             }
@@ -183,7 +184,8 @@ private fun HealthSection(env: LayerEnv, health: List<HealthItem>, onChanged: ()
 @Composable
 private fun ActionButton(text: String, onClick: () -> Unit) = OutlinedButton(onClick = onClick) { Text(text) }
 
-internal const val ADB_GRANT = "adb shell pm grant com.hermesmarcano.zen android.permission.WRITE_SECURE_SETTINGS"
+/** El comando depende del ID de la app (esta variante no usa el de la app normal): por eso se calcula. */
+internal fun adbGrantCommand(packageName: String) = "adb shell pm grant $packageName android.permission.WRITE_SECURE_SETTINGS"
 
 private fun copy(context: Context, text: String) {
     val clipboard = context.getSystemService(ClipboardManager::class.java)

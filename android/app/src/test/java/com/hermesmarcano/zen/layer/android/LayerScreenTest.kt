@@ -221,7 +221,7 @@ class LayerScreenTest {
     @Test fun theAdbCommandIsShownWithoutTheSecureSettingsPermission() {
         runtime.state.update { it.copy(capture = it.capture.copy(screenText = true)) }
         show()
-        compose.onNodeWithText("adb shell pm grant com.hermesmarcano.zen android.permission.WRITE_SECURE_SETTINGS").assertExists()
+        compose.onNodeWithText("adb shell pm grant ${app.packageName} android.permission.WRITE_SECURE_SETTINGS").assertExists()
     }
 
     // --- Pausa ---

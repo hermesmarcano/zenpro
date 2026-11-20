@@ -444,6 +444,7 @@ class LayerStatusTest {
         val xiaomiBattery = LayerIntents.xiaomiBattery(app)
         assertEquals("com.miui.powerkeeper", xiaomiBattery.component!!.packageName)
         assertEquals(app.packageName, xiaomiBattery.getStringExtra("package_name"))
+        assertEquals("ZEN Xiaomi", xiaomiBattery.getStringExtra("package_label"))
     }
 
     @Test fun openFirstReturnsFalseWhenNothingOpens() {

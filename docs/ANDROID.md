@@ -72,7 +72,11 @@ La lógica con reglas de negocio vive en `app/src/main/java/com/hermesmarcano/ze
 
 ## Capa inteligente (Xiaomi)
 
-Además de la alarma y las tareas, la app incluye una **capa opcional** (todo apagado por defecto) que lee el texto de
+> Solo existe en la **variante personal «ZEN Xiaomi»** (rama `claude/xiaomi-note8-layer`, ID `com.hermesmarcano.zen.xiaomi`, descarga
+> `xiaomi-latest`). La app normal (`main`, ID `com.hermesmarcano.zen`) no la lleva ni la llevará. Ver
+> [Separación de la app normal](XIAOMI-LAYER.md#separación-de-la-app-normal).
+
+Además de la alarma y las tareas, la variante incluye una **capa opcional** (todo apagado por defecto) que lee el texto de
 pantalla y las notificaciones, escucha por el micrófono, aplica límites de tiempo por app y propone respuestas que solo se
 envían si las apruebas, con un servidor propio («cerebro») para la memoria. Se abre desde *Ajustes → Abrir la capa*. Guía de
 instalación para un Redmi Note 8 (MIUI 12.5.2), protocolo y qué falta por validar: [`XIAOMI-LAYER.md`](XIAOMI-LAYER.md).

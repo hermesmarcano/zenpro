@@ -73,6 +73,25 @@ SwiftData, AlarmKit) solo lo valida CI.
   activada) y la entitlement especial `com.apple.developer.family-controls`
   (aprobación manual de Apple — solicitar en cuanto exista la cuenta, ver M0).
 
+## Variante personal «Xiaomi» (versión god) — regla de separación (obligatoria en la rama)
+
+La rama `claude/xiaomi-note8-layer` es una **variante personal**: la usa solo su dueño, en su Redmi Note 8. Lleva la capa
+inteligente (accesibilidad, micrófono, lectura de notificaciones, bloqueo; ver `docs/XIAOMI-LAYER.md`), cosas que **no** pertenecen
+a la app normal ni se publicarán en App Store / Google Play. Por eso:
+
+- **Esta rama no se fusiona en `main` ni en ninguna otra rama, y no se abren PR desde ella hacia otra.** Traer `main` a esta
+  rama sí está bien (merge de `main` → rama), para recibir las mejoras del núcleo común.
+- **Identidad propia**: `applicationId = com.hermesmarcano.zen.xiaomi`, nombre «ZEN Xiaomi», `versionName` con sufijo `-xiaomi`,
+  icono con otro fondo. El `namespace` del código sigue siendo `com.hermesmarcano.zen`. Nunca volver al ID de la app normal: ambas
+  deben poder instalarse a la vez sin pisarse (el CI `android-xiaomi.yml` falla si el APK no trae el ID de la variante).
+- **CI y descarga propios**: `android-xiaomi.yml` publica solo en la pre-release `xiaomi-latest` (archivo `zen-xiaomi.apk`). Jamás
+  se publica en `android-latest` (esa es la app normal); `android.yml` ignora esta rama para no duplicar compilaciones.
+- **Lo común se mejora en `main`** y se trae aquí. Nada de la capa (servicios de accesibilidad, micrófono en segundo plano,
+  `NotificationListener`, permisos asociados) debe aparecer en `main`.
+- Cualquier texto o ayuda que nombre al paquete (p. ej. el comando `adb shell pm grant …`) debe derivarse de
+  `context.packageName`, no escribirse a mano.
+- Esta regla vive en la rama de la variante; `main` solo la tendrá si su dueño la añade allí.
+
 ## Android (carpeta `android/`)
 
 Versión nativa Kotlin + Compose instalable por APK. Ver `docs/ANDROID.md`. Mismo ciclo de

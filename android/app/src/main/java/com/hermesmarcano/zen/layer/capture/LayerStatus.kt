@@ -12,6 +12,7 @@ import android.os.PowerManager
 import android.provider.Settings
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import com.hermesmarcano.zen.R
 import com.hermesmarcano.zen.layer.core.HealthInput
 import com.hermesmarcano.zen.ui.Permissions
 
@@ -75,7 +76,7 @@ object LayerIntents {
     fun xiaomiBattery(context: Context) = Intent()
         .setComponent(ComponentName("com.miui.powerkeeper", "com.miui.powerkeeper.ui.HiddenAppsConfigActivity"))
         .putExtra("package_name", context.packageName)
-        .putExtra("package_label", "ZEN")
+        .putExtra("package_label", context.getString(R.string.app_name))
 
     /** Prueba cada intento en orden y se queda con el primero que existe. Devuelve `false` si ninguno abrió nada. */
     fun openFirst(context: Context, vararg candidates: Intent): Boolean {

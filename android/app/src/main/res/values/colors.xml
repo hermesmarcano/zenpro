@@ -1,3 +1,5 @@
 <resources>
     <color name="zen_background">#0E0E10</color>
+    <!-- Fondo del icono: ámbar oscuro, para distinguir esta variante de la app normal en el cajón de apps. -->
+    <color name="zen_xiaomi_launcher_background">#4A3410</color>
 </resources>

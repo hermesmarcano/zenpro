@@ -1,6 +1,7 @@
-# ZEN · Capa inteligente (Android / Xiaomi)
+# ZEN Xiaomi · Capa inteligente (Android / Xiaomi)
 
-Una capa que vive **dentro de la app de ZEN** y observa el teléfono para tres cosas: *recordar* lo que importa
+Una capa que vive **dentro de «ZEN Xiaomi»** (la variante personal de ZEN, con su propio nombre e identificador; ver
+[Separación de la app normal](#separación-de-la-app-normal)) y observa el teléfono para tres cosas: *recordar* lo que importa
 (texto de pantalla, notificaciones, audio), *cumplir* los límites y bloqueos que el propio usuario se pone, y
 *proponer* respuestas que solo se envían si las apruebas. Está pensada para un Redmi Note 8 con MIUI 12.5.2
 (Android 11) instalado por APK, **sin root y sin tocar el bootloader**.
@@ -18,6 +19,29 @@ Una capa que vive **dentro de la app de ZEN** y observa el teléfono para tres c
 | Cuenta el tiempo por app, avisa y, si lo pediste, bloquea (saca la app de primer plano) | Bloquear Ajustes, el teléfono o ZEN: el usuario siempre puede desactivar la capa |
 | Escucha por el micrófono, con un aviso fijo, y manda los tramos de voz al *cerebro* para que los transcriba | Grabar llamadas (Android no deja a una app capturar el audio de la llamada, y grabar a otros tiene implicaciones legales) |
 | Se reactiva sola si Xiaomi la mata (con un permiso opcional dado por ADB) | Funcionar como app de sistema: no es root, es una app normal con permisos que concede el usuario |
+
+## Separación de la app normal
+
+Esta rama (`claude/xiaomi-note8-layer`) es una **variante personal**: solo la usa su dueño, en su Redmi Note 8. No es la app
+de ZEN que se publicará, y por eso están separadas de arriba abajo:
+
+| | ZEN (normal, rama `main`) | ZEN Xiaomi (esta rama) |
+|---|---|---|
+| Nombre en el teléfono | ZEN | **ZEN Xiaomi** (icono con otro fondo) |
+| Identificador de la app (`applicationId`) | `com.hermesmarcano.zen` | **`com.hermesmarcano.zen.xiaomi`** |
+| Versión | `0.3.0` | `0.3.0-xiaomi` |
+| CI | `android.yml` | `android-xiaomi.yml` (el normal ignora esta rama) |
+| Descarga | pre-release `android-latest` | pre-release **`xiaomi-latest`** |
+| Accesibilidad, micrófono, lectura de notificaciones | **nunca** | sí (la capa) |
+
+- **Se instalan una al lado de la otra**: son apps distintas para Android, con datos, permisos y ajustes independientes. Instalar
+  ZEN Xiaomi no sustituye ni toca a ZEN.
+- **Cuidado con la alarma**: si ambas tienen alarma programada, sonarán las dos. Usa la alarma en una sola.
+- El CI de la variante **comprueba el identificador del APK** y falla si por error vuelve a ser el de la app normal.
+- **La rama no se fusiona con `main` ni se abre PR hacia otra rama**: lo que haya de común se mejora en `main` y se trae a esta
+  rama, nunca al revés. La regla completa está en `CLAUDE.md`.
+- La firma (`zen-sideload.jks`) es la misma que usa el APK normal para sideload; Android solo distingue las apps por su
+  identificador, así que no chocan.
 
 ## Principios de diseño
 
@@ -37,17 +61,17 @@ Una capa que vive **dentro de la app de ZEN** y observa el teléfono para tres c
 
 Los nombres exactos de los menús cambian entre versiones de MIUI; si alguno no coincide, busca el ajuste por nombre.
 
-1. **Instala el APK** (ver [`ANDROID.md`](ANDROID.md)). MIUI avisará de «instalar apps desconocidas» y puede mostrar un
+1. **Instala el APK** de la pre-release **`xiaomi-latest`** (archivo `zen-xiaomi.apk`; ver también [`ANDROID.md`](ANDROID.md)). MIUI avisará de «instalar apps desconocidas» y puede mostrar un
    análisis de seguridad: es normal en un APK fuera de Play.
-2. Abre ZEN → **Ajustes → Abrir la capa**. Ahí, arriba, la sección **Estado** te dice qué falta y tiene un botón para cada cosa.
+2. Abre **ZEN Xiaomi** → **Ajustes → Abrir la capa**. Ahí, arriba, la sección **Estado** te dice qué falta y tiene un botón para cada cosa.
 3. **Accesibilidad** (para leer la pantalla y bloquear): Ajustes del teléfono → *Ajustes adicionales → Accesibilidad →
-   Servicios descargados → «ZEN · capa»* → activar. MIUI mostrará un aviso fuerte: lee la descripción, es el texto exacto de lo que hace.
-4. **Acceso a notificaciones**: Ajustes → *Notificaciones y barra de estado → Acceso a notificaciones → ZEN* → activar.
+   Servicios descargados → «ZEN Xiaomi · capa»* → activar. MIUI mostrará un aviso fuerte: lee la descripción, es el texto exacto de lo que hace.
+4. **Acceso a notificaciones**: Ajustes → *Notificaciones y barra de estado → Acceso a notificaciones → ZEN Xiaomi* → activar.
 5. **Micrófono** (opcional, necesita un cerebro configurado): el interruptor pide el permiso.
 6. **Que Xiaomi no la mate** (imprescindible, es lo que más rompe estas apps):
-   - *Seguridad → Permisos → Inicio automático* → activa **ZEN**.
-   - *Ajustes → Batería → Ahorro de batería de las apps → ZEN → **Sin restricciones*** (la pantalla Capa tiene un botón).
-   - En *Recientes*, **bloquea ZEN** (mantén pulsada su tarjeta → candado) para que «limpiar memoria» no la cierre.
+   - *Seguridad → Permisos → Inicio automático* → activa **ZEN Xiaomi**.
+   - *Ajustes → Batería → Ahorro de batería de las apps → ZEN Xiaomi → **Sin restricciones*** (la pantalla Capa tiene un botón).
+   - En *Recientes*, **bloquea ZEN Xiaomi** (mantén pulsada su tarjeta → candado) para que «limpiar memoria» no la cierre.
    - Márcalo como hecho en el Estado de la capa («Ya lo hice»).
 7. **Reparación automática (opcional)**: Android no deja que una app se dé a sí misma `WRITE_SECURE_SETTINGS`, pero tú puedes
    concedérselo **una vez** por ADB. Con él, si Xiaomi apaga el servicio de accesibilidad, la capa lo reactiva sola.
@@ -55,10 +79,10 @@ Los nombres exactos de los menús cambian entre versiones de MIUI; si alguno no 
    cuenta Mi y SIM para esto). Conecta el cable y, desde un ordenador con `adb`:
 
    ```
-   adb shell pm grant com.hermesmarcano.zen android.permission.WRITE_SECURE_SETTINGS
+   adb shell pm grant com.hermesmarcano.zen.xiaomi android.permission.WRITE_SECURE_SETTINGS
    ```
 
-   La pantalla Capa muestra este comando con un botón para copiarlo. Sin el permiso la capa solo avisa de que el servicio se cayó.
+   El identificador es el de la variante (`.xiaomi`), no el de ZEN normal. La pantalla Capa muestra este comando con un botón para copiarlo. Sin el permiso la capa solo avisa de que el servicio se cayó.
 
 ## El cerebro (protocolo)
 
@@ -114,6 +138,8 @@ Cuerpo `audio/wav` (16 kHz, 16 bits, mono) de un tramo de voz. Cabeceras: `X-Zen
   FTS4 sin tildes ni mayúsculas) y audio pendiente (`layer/audio/`).
 - **Retención**: memoria 30 días o 20 000 filas; cola de envío 3 días o 5 000 elementos; audio hasta que se envía (tope de 200 MB).
 - **Borrar**: «Borrar todo…» en la pantalla Capa (memoria + cola + audio); vetar una app también olvida lo que había de ella.
+  «Quitar cerebro» borra además la cola de envío y el audio pendiente: eran para ese cerebro y no deben acabar en otro servidor
+  que se configure después (la memoria local se conserva).
 - **Fuera del teléfono**: nada, salvo lo que mandes al cerebro que tú configures.
 
 ## Pendiente de validar en el teléfono
