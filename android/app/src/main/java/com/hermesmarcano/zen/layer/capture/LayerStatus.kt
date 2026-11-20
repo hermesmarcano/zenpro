@@ -78,6 +78,18 @@ object LayerIntents {
         .putExtra("package_name", context.packageName)
         .putExtra("package_label", context.getString(R.string.app_name))
 
+    /**
+     * Los permisos de la app en MIUI (la pantalla de Seguridad). Es privada y cambia entre versiones: [appDetails] es el plan B.
+     * Hace falta cuando Android ya no vuelve a pedir un permiso que se denegó (entonces solo se puede conceder a mano).
+     */
+    fun xiaomiAppPermissions(context: Context) = Intent("miui.intent.action.APP_PERM_EDITOR")
+        .setComponent(ComponentName("com.miui.securitycenter", "com.miui.permcenter.permissions.PermissionsEditorActivity"))
+        .putExtra("extra_pkgname", context.packageName)
+
+    /** La ficha de la app en Ajustes del sistema (permisos, batería…). */
+    fun appDetails(context: Context) =
+        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).setData(Uri.parse("package:${context.packageName}"))
+
     /** Prueba cada intento en orden y se queda con el primero que existe. Devuelve `false` si ninguno abrió nada. */
     fun openFirst(context: Context, vararg candidates: Intent): Boolean {
         for (intent in candidates) {

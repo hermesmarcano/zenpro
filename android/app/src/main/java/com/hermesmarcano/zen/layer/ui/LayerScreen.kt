@@ -160,7 +160,10 @@ internal fun Panel(content: @Composable () -> Unit) {
 @Composable
 private fun HealthSection(env: LayerEnv, health: List<HealthItem>, onChanged: () -> Unit) {
     val state by env.runtime.state.state.collectAsState()
-    val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { onChanged() }
+    val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (!granted) env.say(MIC_DENIED)
+        onChanged()
+    }
     SectionTitle("Estado")
     val problems = health.filter { !it.ok }
     if (problems.isEmpty() && health.isNotEmpty()) Hint("Todo en orden con lo que tienes encendido.")
@@ -178,7 +181,10 @@ private fun HealthSection(env: LayerEnv, health: List<HealthItem>, onChanged: ()
                 when (item.id) {
                     "accessibility" -> ActionButton("Abrir accesibilidad") { LayerIntents.openFirst(env.context, LayerIntents.accessibility()) }
                     "listener" -> ActionButton("Abrir acceso a notificaciones") { LayerIntents.openFirst(env.context, LayerIntents.notificationAccess()) }
-                    "mic" -> ActionButton("Dar permiso del micrófono") { micPermission.launch(Manifest.permission.RECORD_AUDIO) }
+                    "mic" -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        ActionButton("Dar permiso del micrófono") { micPermission.launch(Manifest.permission.RECORD_AUDIO) }
+                        ActionButton("Abrir permisos de la app") { openAppPermissions(env) }
+                    }
                     "battery" -> ActionButton("Quitar la restricción") {
                         LayerIntents.openFirst(env.context, LayerIntents.xiaomiBattery(env.context), LayerIntents.batteryExemption(env.context))
                     }
@@ -202,7 +208,17 @@ private fun HealthSection(env: LayerEnv, health: List<HealthItem>, onChanged: ()
 private fun ActionButton(text: String, onClick: () -> Unit) = OutlinedButton(onClick = onClick) { Text(text) }
 
 /** El comando depende del ID de la app (esta variante no usa el de la app normal): por eso se calcula. */
-internal fun adbGrantCommand(packageName: String) = "adb shell pm grant $packageName android.permission.WRITE_SECURE_SETTINGS"
+internal fun adbGrantCommand(packageName: String, permission: String = "android.permission.WRITE_SECURE_SETTINGS") =
+    "adb shell pm grant $packageName $permission"
+
+private const val MIC_DENIED =
+    "Sin el permiso del micrófono no se puede escuchar. Si Android ya no te lo pregunta, ábrelo en «Permisos de la app»."
+
+/** Abre los permisos de la app (MIUI primero, la ficha de Ajustes si no existe) y avisa si ninguna pantalla se pudo abrir. */
+private fun openAppPermissions(env: LayerEnv) {
+    val opened = LayerIntents.openFirst(env.context, LayerIntents.xiaomiAppPermissions(env.context), LayerIntents.appDetails(env.context))
+    if (!opened) env.say("No se pudo abrir Ajustes: ve a Ajustes del teléfono → Apps → ZEN → Permisos.")
+}
 
 private fun copy(context: Context, text: String) {
     val clipboard = context.getSystemService(ClipboardManager::class.java)
@@ -245,9 +261,14 @@ private fun PauseSection(env: LayerEnv, state: LayerState) {
 private fun CaptureSection(env: LayerEnv, state: LayerState, health: List<HealthItem>, onChanged: () -> Unit) {
     val capture = state.capture
     var startAudioAfterPermission by remember { mutableStateOf(false) }
+
+    // Android deja de preguntar tras denegar el permiso un par de veces: entonces el interruptor no podía hacer nada y tampoco decía nada.
+    var micDenied by remember { mutableStateOf(false) }
     val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         onChanged()
+        micDenied = !granted
         if (granted && startAudioAfterPermission) startAudio(env)
+        if (!granted && startAudioAfterPermission) env.say(MIC_DENIED)
         startAudioAfterPermission = false
     }
     SectionTitle("Qué observa")
@@ -287,12 +308,29 @@ private fun CaptureSection(env: LayerEnv, state: LayerState, health: List<Health
         }
     }
     if (health.any { it.id == "mic" && !it.ok } && capture.ambientAudio) Hint("Falta el permiso del micrófono (arriba, en Estado).")
+    if (micDenied && !LayerStatus.hasMicrophone(env.context)) {
+        Hint("Android no concedió el permiso del micrófono. Si ya no te lo pregunta, ábrelo a mano (Permisos → Micrófono → Permitir) o concédelo desde un ordenador con:")
+        val command = adbGrantCommand(env.context.packageName, "android.permission.RECORD_AUDIO")
+        Text(command, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ActionButton("Abrir permisos de la app") { openAppPermissions(env) }
+            ActionButton("Copiar el comando") { copy(env.context, command); env.say("Comando copiado.") }
+        }
+    }
 }
 
 private fun startAudio(env: LayerEnv) {
     // Primero se guarda (las precondiciones del servicio leen el estado) y después se arranca.
     if (!env.saveCapture { it.copy(ambientAudio = true) }) return
-    when (AmbientAudioService.start(env.context)) {
+    val check = try {
+        AmbientAudioService.start(env.context)
+    } catch (e: RuntimeException) {
+        // Android (o MIUI) se negó a arrancar el servicio: se dice y el interruptor vuelve a «apagado», no se queda encendido sin escuchar.
+        env.saveCapture { it.copy(ambientAudio = false) }
+        env.say("Android no dejó iniciar la escucha${e.message?.let { ": $it" } ?: ""}. Abre ZEN y vuelve a probar con la pantalla encendida.")
+        return
+    }
+    when (check) {
         AmbientAudioService.StartCheck.OK -> env.say("Escuchando. Verás un aviso fijo mientras el micrófono esté activo.")
         AmbientAudioService.StartCheck.NO_BRAIN -> env.say("Primero configura el cerebro.")
         AmbientAudioService.StartCheck.NO_PERMISSION -> env.say("Falta el permiso del micrófono.")

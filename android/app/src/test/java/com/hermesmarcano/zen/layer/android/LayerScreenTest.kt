@@ -4,6 +4,12 @@ import android.Manifest
 import android.app.Application
 import android.content.Intent
 import android.provider.Settings
+import androidx.activity.compose.LocalActivityResultRegistryOwner
+import androidx.activity.result.ActivityResultRegistry
+import androidx.activity.result.ActivityResultRegistryOwner
+import androidx.activity.result.contract.ActivityResultContract
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.core.app.ActivityOptionsCompat
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
@@ -201,6 +207,46 @@ class LayerScreenTest {
         toggles()[2].tap()
         assertTrue(runtime.state.current.capture.ambientAudio)
         assertNotNull(shadowOf(app as Application).nextStartedService)
+    }
+
+    /** Un registro de resultados que NIEGA todo permiso: es lo que pasa cuando Android ya no vuelve a preguntar. */
+    private fun showWithPermissionsDenied() {
+        compose.mainClock.autoAdvance = false
+        val denying = object : ActivityResultRegistryOwner {
+            override val activityResultRegistry = object : ActivityResultRegistry() {
+                override fun <I, O> onLaunch(requestCode: Int, contract: ActivityResultContract<I, O>, input: I, options: ActivityOptionsCompat?) {
+                    @Suppress("UNCHECKED_CAST")
+                    dispatchResult(requestCode, false as O)
+                }
+            }
+        }
+        compose.setContent {
+            CompositionLocalProvider(LocalActivityResultRegistryOwner provides denying) {
+                ZenTheme { LayerScreen(onClose = { closed = true }, appLoader = { apps }, clock = { now }) }
+            }
+        }
+    }
+
+    @Test fun aDeniedMicrophonePermissionSaysSoAndOffersAWayOut() {
+        runtime.state.update { it.copy(brainUrl = "https://brain.example.com", brainToken = "tok") }
+        showWithPermissionsDenied()
+        toggles()[2].tap()
+        assertFalse(runtime.state.current.capture.ambientAudio) // sin permiso no se enciende
+        assertNull(shadowOf(app as Application).nextStartedService)
+        compose.onNodeWithText("Sin el permiso del micrófono", substring = true).assertExists() // ya no falla en silencio
+        compose.onNodeWithText("adb shell pm grant ${app.packageName} android.permission.RECORD_AUDIO").assertExists()
+        node("Abrir permisos de la app").tap()
+        // Con MIUI abre su editor de permisos; si no existe, la ficha de la app en Ajustes.
+        val action = startedActivity()!!.action
+        assertTrue(action == "miui.intent.action.APP_PERM_EDITOR" || action == Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+    }
+
+    @Test fun theStatusAlsoOffersTheAppPermissionsWhenTheMicrophonePermissionIsMissing() {
+        runtime.state.update { it.copy(brainUrl = "https://brain.example.com", brainToken = "tok", capture = it.capture.copy(ambientAudio = true)) }
+        show()
+        node("Dar permiso del micrófono").assertExists()
+        node("Abrir permisos de la app").tap()
+        assertNotNull(startedActivity())
     }
 
     @Test fun turningTheMicrophoneOffStopsIt() {
