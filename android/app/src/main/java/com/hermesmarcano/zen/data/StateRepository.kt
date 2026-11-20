@@ -117,6 +117,10 @@ internal object StateJson {
         .put("bestGoalWeekStreak", p.bestGoalWeekStreak)
         .put("lastGoalWeek", p.lastGoalWeek ?: JSONObject.NULL)
         .put("alarmTestsPassed", p.alarmTestsPassed)
+        .put("chatDays", p.chatDays)
+        .put("voiceDays", p.voiceDays)
+        .put("chatXpDay", p.chatXpDay ?: JSONObject.NULL)
+        .put("voiceXpDay", p.voiceXpDay ?: JSONObject.NULL)
 
     private fun decodeProgress(json: JSONObject?): Progress {
         if (json == null) return Progress()
@@ -152,6 +156,10 @@ internal object StateJson {
             bestGoalWeekStreak = maxOf(json.optInt("bestGoalWeekStreak").coerceAtLeast(0), json.optInt("goalWeekStreak").coerceAtLeast(0)),
             lastGoalWeek = longOrNull("lastGoalWeek"),
             alarmTestsPassed = json.optInt("alarmTestsPassed").coerceAtLeast(0),
+            chatDays = json.optInt("chatDays").coerceAtLeast(0),
+            voiceDays = json.optInt("voiceDays").coerceAtLeast(0),
+            chatXpDay = longOrNull("chatXpDay"),
+            voiceXpDay = longOrNull("voiceXpDay"),
         )
     }
 

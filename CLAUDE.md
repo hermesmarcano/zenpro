@@ -104,6 +104,11 @@ a la app normal ni se publicarán en App Store / Google Play. Por eso:
   - El cerebro **propone** acciones sobre el teléfono, no las ejecuta: un evento de calendario es una notificación que abre el calendario con
     el evento relleno (`ACTION_INSERT`) y lo guarda el usuario; la app no pide `READ_CALENDAR`/`WRITE_CALENDAR` (un test los veta). Una acción
     nueva sigue el mismo patrón: orden validada por el adaptador y por `CommandPolicy`, tope por hora, y un toque del usuario para ejecutarla.
+  - El **chat** con el cerebro (`POST /v1/chat`, pantalla Chat; `ChatController`) sigue las mismas reglas: solo admite `calendar_event`, `block` y `pause`
+    (el adaptador y la app filtran), todo pasa por `CommandApplier` con sus topes (un evento es una tarjeta «Agendar» que guarda el usuario), con la capa en
+    pausa o sin cerebro no se envía ni se graba nada, el audio solo vive en memoria y la conversación va **cifrada** con `SecretBox` (si no se puede cifrar,
+    no se guarda). La auditoría del servidor nunca guarda texto de la conversación. La gamificación del chat es la de siempre: XP una vez al día
+    (y otra por voz), sin castigos ni avisos de pérdida.
 - Esta regla vive en la rama de la variante; `main` solo la tendrá si su dueño la añade allí.
 
 ## Android (carpeta `android/`)

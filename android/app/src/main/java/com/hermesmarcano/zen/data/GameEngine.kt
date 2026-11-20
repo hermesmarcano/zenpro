@@ -22,10 +22,12 @@ data class GameEvents(
     /** Ejercicios en los que se batió un récord personal en el entrenamiento. */
     val records: Int = 0,
     val weeklyGoalMet: Boolean = false,
+    /** Una conversación con el cerebro que contó hoy. */
+    val chatDone: Boolean = false,
 ) {
     val leveledUp: Boolean get() = levelAfter > levelBefore
     val isEmpty: Boolean
-        get() = xpGained == 0 && unlocked.isEmpty() && !mitDone && !perfectDay && !completeDay && !workoutDone && records == 0 && !weeklyGoalMet
+        get() = xpGained == 0 && unlocked.isEmpty() && !mitDone && !perfectDay && !completeDay && !workoutDone && records == 0 && !weeklyGoalMet && !chatDone
 }
 
 /** Lo que el juego necesita saber de un entrenamiento terminado. */
@@ -182,6 +184,27 @@ object GameEngine {
     fun recordAlarmTest(state: ZenState, today: LocalDate): Result {
         val progress = state.progress.copy(alarmTestsPassed = (state.progress.alarmTestsPassed + 1).coerceAtMost(1_000_000))
         return finish(state, state.copy(progress = progress), today.toEpochDay(), 0)
+    }
+
+    /**
+     * Una conversación con el cerebro que cuenta (ya filtrada: ver ChatRules.qualifies). Da XP la primera vez de cada día, y otro
+     * tanto la primera por voz de cada día; el resto del día no suma nada (ni es una forma de farmear XP hablando).
+     */
+    fun recordChat(state: ZenState, voice: Boolean, today: LocalDate): Result {
+        val day = today.toEpochDay()
+        var progress = state.progress
+        var xp = 0
+        if (progress.chatXpDay != day) {
+            xp += XpRules.CHAT_DAY
+            progress = progress.copy(chatXpDay = day, chatDays = (progress.chatDays + 1).coerceAtMost(1_000_000))
+        }
+        if (voice && progress.voiceXpDay != day) {
+            xp += XpRules.CHAT_VOICE_DAY
+            progress = progress.copy(voiceXpDay = day, voiceDays = (progress.voiceDays + 1).coerceAtMost(1_000_000))
+        }
+        if (xp == 0) return Result(state)
+        progress = progress.copy(xp = Levels.addXp(progress.xp, xp))
+        return finish(state, state.copy(progress = progress), day, xp, flags = GameEvents(chatDone = true))
     }
 
     /** Empieza un viaje (sustituye al anterior si lo hubiera). */

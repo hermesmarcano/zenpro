@@ -178,6 +178,11 @@ data class Progress(
     val lastGoalWeek: Long? = null,
     /** Pruebas de alarma de 1 minuto que llegaron a tiempo. */
     val alarmTestsPassed: Int = 0,
+    /** Días distintos con una conversación que cuenta con el cerebro (y de ellos, los que fueron por voz), y el último día que dio XP de cada tipo. */
+    val chatDays: Int = 0,
+    val voiceDays: Int = 0,
+    val chatXpDay: Long? = null,
+    val voiceXpDay: Long? = null,
 )
 
 data class ZenState(

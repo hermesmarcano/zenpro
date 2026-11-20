@@ -43,6 +43,11 @@ class Config:
     calendar: bool = True
     timezone: str = "UTC"  # la hora LOCAL de la persona: el modelo da «mañana a las 9» y el adaptador lo convierte
     max_calendar_per_hour: int = 6
+    # Chat con voz o texto desde la app: respuesta inmediata (a diferencia de los eventos, que se procesan en segundo plano).
+    chat: bool = True
+    max_chat_per_hour: int = 60
+    max_chat_per_day: int = 400
+    chat_concurrency: int = 2
     # Tope acumulado en 24 h: aunque las órdenes se repitan, no se encadenan bloqueos o pausas sin fin.
     block_minutes_per_day: int = 240
     pause_minutes_per_day: int = 120
@@ -141,6 +146,9 @@ def from_env(env: Mapping[str, str], *, require_hermes_key: bool = True) -> Conf
     calendar = (env.get("ZEN_CALENDAR") or "on").strip().lower()
     if calendar not in ("on", "off"):
         raise ConfigError("ZEN_CALENDAR debe ser on u off")
+    chat = (env.get("ZEN_CHAT") or "on").strip().lower()
+    if chat not in ("on", "off"):
+        raise ConfigError("ZEN_CHAT debe ser on u off")
     tz = (env.get("ZEN_TIMEZONE") or base.timezone).strip()
     try:
         ZoneInfo(tz)
@@ -157,7 +165,7 @@ def from_env(env: Mapping[str, str], *, require_hermes_key: bool = True) -> Conf
         hermes_url=url,
         hermes_key=key,
         hermes_model=(env.get("ZEN_HERMES_MODEL") or base.hermes_model).strip(),
-        hermes_timeout_s=_float(env, "ZEN_HERMES_TIMEOUT", base.hermes_timeout_s, 1.0, 120.0),
+        hermes_timeout_s=_float(env, "ZEN_HERMES_TIMEOUT", base.hermes_timeout_s, 1.0, 90.0),
         data_dir=data_dir,
         audit_path=Path(env.get("ZEN_AUDIT_PATH") or base.audit_path),
         tokens_file=Path(env.get("ZEN_TOKENS_FILE") or base.tokens_file),
@@ -167,6 +175,10 @@ def from_env(env: Mapping[str, str], *, require_hermes_key: bool = True) -> Conf
         calendar=calendar == "on",
         timezone=tz,
         max_calendar_per_hour=_int(env, "ZEN_MAX_CALENDAR_PER_HOUR", base.max_calendar_per_hour, 0, 50),
+        chat=chat == "on",
+        max_chat_per_hour=_int(env, "ZEN_MAX_CHAT_PER_HOUR", base.max_chat_per_hour, 1, 1000),
+        max_chat_per_day=_int(env, "ZEN_MAX_CHAT_PER_DAY", base.max_chat_per_day, 1, 10_000),
+        chat_concurrency=_int(env, "ZEN_CHAT_CONCURRENCY", base.chat_concurrency, 1, 8),
         block_minutes_per_day=_int(env, "ZEN_BLOCK_MINUTES_PER_DAY", base.block_minutes_per_day, 1, 1440),
         pause_minutes_per_day=_int(env, "ZEN_PAUSE_MINUTES_PER_DAY", base.pause_minutes_per_day, 1, 1440),
         model_kinds=kinds,

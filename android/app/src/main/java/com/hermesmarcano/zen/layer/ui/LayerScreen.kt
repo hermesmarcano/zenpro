@@ -87,6 +87,7 @@ internal class LayerEnv(val context: Context, val runtime: LayerRuntime, val now
 @Composable
 fun LayerScreen(
     onClose: () -> Unit,
+    onOpenChat: () -> Unit = {},
     appLoader: (Context) -> List<AppEntry> = ::loadLauncherApps,
     clock: () -> Long = System::currentTimeMillis,
 ) {
@@ -121,7 +122,7 @@ fun LayerScreen(
         LimitsSection(env, state, appLoader)
         DraftsSection(env, state)
         MemorySection(env, state)
-        BrainSection(env, state)
+        BrainSection(env, state, onOpenChat)
         Hint("La guía de instalación y el protocolo con el cerebro están en docs/XIAOMI-LAYER.md.")
     }
     message?.let { text ->

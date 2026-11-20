@@ -46,8 +46,8 @@ class ScriptedHermes:
         self.calls: list[dict] = []
         self.gate: threading.Event | None = None
 
-    def complete(self, system: str, user: str, *, idempotency_key: str, session_id: str) -> HermesReply:
-        self.calls.append({"system": system, "user": user, "key": idempotency_key, "session": session_id})
+    def complete(self, system: str, user: str, *, idempotency_key: str, session_id: str, retries: int | None = None) -> HermesReply:
+        self.calls.append({"system": system, "user": user, "key": idempotency_key, "session": session_id, "retries": retries})
         if self.gate is not None:
             self.gate.wait(10)
         item = self.replies.pop(0) if self.replies else EMPTY

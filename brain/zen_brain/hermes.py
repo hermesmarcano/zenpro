@@ -57,7 +57,7 @@ class HermesClient:
         self._retries = retries
         self._sleep = sleep
 
-    def complete(self, system: str, user: str, *, idempotency_key: str, session_id: str) -> HermesReply:
+    def complete(self, system: str, user: str, *, idempotency_key: str, session_id: str, retries: int | None = None) -> HermesReply:
         body = json.dumps(
             {
                 "model": self._model,
@@ -76,7 +76,7 @@ class HermesClient:
         }
         started = time.monotonic()
         last: HermesError | None = None
-        for attempt in range(self._retries + 1):
+        for attempt in range((self._retries if retries is None else retries) + 1):
             if attempt:
                 self._sleep(min(8.0, 2.0 ** (attempt - 1)) + random.random() * 0.25)
             try:

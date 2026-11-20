@@ -12,7 +12,7 @@ import queue
 import secrets
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Callable
 from zoneinfo import ZoneInfo
@@ -22,8 +22,9 @@ from .audit import Audit
 from .config import Config
 from .hermes import HermesClient, HermesError
 from .monitor import Monitor
-from .prompt import new_boundary, now_line, system_prompt, user_message
+from .prompt import chat_system_prompt, chat_user_message, new_boundary, now_line, system_prompt, user_message
 from .protocol import Event
+from .sanitize import clean_text
 from .store import Store
 from .stt import Transcriber
 from .validate import Candidate, parse_model_output
@@ -44,6 +45,20 @@ class Job:
     pcm: bytes | None = None
     segment_id: str = ""
     started_ms: int = 0
+
+
+# Órdenes que admite el chat (la persona las pide hablando): propuestas de calendario, bloqueos y pausas. Un borrador o un aviso
+# no tienen sentido aquí (no hay conversación de otra persona a la que responder).
+CHAT_COMMANDS = frozenset({"calendar_event", "block", "pause"})
+CHAT_MAX_CHARS = 2000
+CHEAP_AUDIT_PER_MINUTE = 20  # líneas de auditoría por minuto y tipo para las respuestas del chat que no cuestan nada
+
+
+@dataclass(frozen=True)
+class ChatOutcome:
+    status: int
+    body: dict
+    headers: dict = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -68,6 +83,8 @@ class Brain:
         start_workers: bool = True,
     ) -> None:
         self.cfg = cfg
+        self._cheap_lock = threading.Lock()
+        self._cheap: dict[str, list] = {}
         self.store = store
         self.audit = audit
         self.hermes = hermes
@@ -75,6 +92,8 @@ class Brain:
         self.monitor = monitor
         self._system = system_prompt(cfg)
         self._tz = ZoneInfo(cfg.timezone)
+        self._chat_system = chat_system_prompt(cfg)
+        self._chat_slots = threading.BoundedSemaphore(cfg.chat_concurrency)
         self._events: queue.Queue[Job | None] = queue.Queue(maxsize=cfg.queue_max)
         self._audio: queue.Queue[Job | None] = queue.Queue(maxsize=cfg.audio_queue_max)
         self._threads: list[threading.Thread] = []
@@ -89,6 +108,27 @@ class Brain:
             return bool(self.audit.log(**fields))
         except Exception:  # noqa: BLE001
             return False
+
+    def _log_cheap(self, **fields: object) -> None:
+        """Auditoría de las respuestas que no cuestan nada (chat apagado, vacío, ocupado, tope…): con tope por minuto y tipo, para
+        que quien tenga un token válido no pueda empujar fuera del historial las alertas con peticiones inútiles. Lo que se
+        omite se resume en una línea `suppressed` al cambiar de minuto."""
+        kind = str(fields.get("decision", "?"))
+        now = time.monotonic()
+        summary = None
+        with self._cheap_lock:
+            window = self._cheap.setdefault(kind, [now, 0, 0])
+            if now - window[0] >= 60:
+                if window[2]:
+                    summary = window[2]
+                window[0], window[1], window[2] = now, 0, 0
+            if window[1] >= CHEAP_AUDIT_PER_MINUTE:
+                window[2] += 1
+                return
+            window[1] += 1
+        if summary:
+            self._log(type="suppressed", kind=f"chat_{kind}", count=summary)
+        self._log(**fields)
 
     def _spawn(self, target: Callable[[], None], name: str) -> None:
         thread = threading.Thread(target=target, name=name, daemon=True)
@@ -246,6 +286,96 @@ class Brain:
                 self.monitor.record_block(device)
             elif wire["type"] == "pause":
                 self.monitor.record_pause(device)
+
+    # ---- chat ----------------------------------------------------------------------------------------------------
+
+    def chat(self, device: str, session: str, *, text: str | None = None, pcm: bytes | None = None) -> ChatOutcome:
+        """Un mensaje de la persona (texto, o voz que se transcribe aquí) y la respuesta de Hermes, al momento. Las órdenes que
+        pida (calendario, bloqueo, pausa) pasan por EXACTAMENTE la misma validación y política que las de los eventos y vuelven en la
+        propia respuesta (no se encolan). Nada del texto se escribe en la auditoría."""
+        try:
+            return self._chat(device, session, text, pcm)
+        except Exception as exc:  # noqa: BLE001
+            # Nada que salga mal dentro debe cortar la conexión sin respuesta ni dejar la petición sin rastro.
+            self._log(type="chat", device=device, voice=pcm is not None, decision="internal_error", error=type(exc).__name__)
+            return ChatOutcome(500, {"error": "internal_error"})
+
+    def _chat(self, device: str, session: str, text: str | None, pcm: bytes | None) -> ChatOutcome:
+        voice = pcm is not None
+        base = {"type": "chat", "device": device, "voice": voice}
+
+        def end(decision: str, status: int, body: dict, headers: dict | None = None, *, cheap: bool = False, **extra: object) -> ChatOutcome:
+            (self._log_cheap if cheap else self._log)(**base, decision=decision, **extra)
+            return ChatOutcome(status, body, headers or {})
+
+        # Lo que se puede rechazar sin gastar nada va ANTES de los topes: un reintento tras un «ocupado» no debe costar cupo.
+        if not self.cfg.chat:
+            return end("chat_off", 404, {"error": "chat_off"}, cheap=True)
+        message = ""
+        if voice:
+            if not self.cfg.stt_enabled:
+                return end("stt_off", 422, {"error": "stt_off"}, cheap=True)
+        else:
+            message = clean_text(text, CHAT_MAX_CHARS)
+            if not message:
+                return end("empty", 400, {"error": "empty"}, cheap=True)
+        if self.monitor.in_cooldown(device):  # el cortacircuitos vale igual para el chat: un modelo dudoso no emite nada
+            return end("cooldown", 503, {"error": "cooldown"}, {"Retry-After": "60"}, cheap=True)
+        if not self._chat_slots.acquire(blocking=False):
+            return end("busy", 503, {"error": "busy"}, {"Retry-After": "5"}, cheap=True)
+        try:
+            failed = self.store.try_consume_all(
+                device, [("chat_hour", self.cfg.max_chat_per_hour, HOUR_S, 1), ("chat_day", self.cfg.max_chat_per_day, DAY_S, 1)]
+            )
+            if failed is not None:
+                return end("rate_limited", 429, {"error": "too_many_messages"}, {"Retry-After": "300"}, cheap=True)
+            transcript = ""
+            if voice:
+                try:
+                    transcript = clean_text(self.transcriber.transcribe(pcm or b""), CHAT_MAX_CHARS)
+                except Exception as exc:  # noqa: BLE001
+                    return end("stt_error", 422, {"error": "stt_failed"}, error=type(exc).__name__)
+                message = transcript
+                if not message:
+                    return end("no_speech", 422, {"error": "no_speech"})
+
+            user = chat_user_message(message, new_boundary(), now_line(datetime.now(self._tz), self.cfg.timezone))
+            try:
+                reply = self.hermes.complete(
+                    self._chat_system, user,
+                    idempotency_key=f"zen-{device}-chat-{secrets.token_hex(8)}",
+                    session_id=f"zen-{device}-chat-{session}",
+                    retries=0,  # una persona espera: un fallo se le dice y ella reintenta (los reintentos largos rebasarían el plazo)
+                )
+            except HermesError as exc:
+                if exc.code == "auth":
+                    self._log(type="alert", code="hermes_auth")
+                timeout = exc.code == "timeout"
+                return end("model_error", 504 if timeout else 502, {"error": "brain_timeout" if timeout else "brain_unavailable"}, reason=exc.code)
+
+            output = parse_model_output(reply.content, self.cfg, want_reply=True, allowed=CHAT_COMMANDS)
+            self.monitor.record_model_result(device, output.valid_json)
+            if not output.valid_json:
+                self.monitor.record_rejections(device, output.rejected)
+                return end("model_invalid", 502, {"error": "bad_reply"}, rejected=output.rejected, model_ms=reply.elapsed_ms, tokens=reply.total_tokens)
+            chat_event = Event(f"chat-{secrets.token_hex(4)}", "chat", "chat", "chat", "", int(time.time() * 1000), None)
+            emitted, rejected = self._policy(device, chat_event, output.commands)
+            rejected = output.rejected + rejected
+            self.monitor.record_rejections(device, rejected)
+            logged = self._log(
+                **base, decision="processed", text_len=len(message), reply_len=len(output.reply),
+                commands_emitted=[wire["type"] for wire, _ in emitted], rejected=rejected, model_ms=reply.elapsed_ms, tokens=reply.total_tokens,
+            )
+            if not logged:  # sin rastro no se actúa: ni se devuelven órdenes
+                return ChatOutcome(503, {"error": "audit_unavailable"})
+            for wire, _ttl in emitted:
+                if wire["type"] == "block":
+                    self.monitor.record_block(device)
+                elif wire["type"] == "pause":
+                    self.monitor.record_pause(device)
+            return ChatOutcome(200, {"reply": output.reply, "transcript": transcript if voice else None, "commands": [wire for wire, _ in emitted]})
+        finally:
+            self._chat_slots.release()
 
     def _epoch(self, local: str) -> float | None:
         """«AAAA-MM-DDTHH:MM» en la zona de la persona → segundos desde 1970 (None si no es una fecha real)."""

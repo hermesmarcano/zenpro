@@ -39,6 +39,7 @@ import com.hermesmarcano.zen.alarm.AlarmRuntime
 import com.hermesmarcano.zen.layer.capture.AmbientAudioService
 import com.hermesmarcano.zen.layer.capture.LayerLive
 import com.hermesmarcano.zen.layer.capture.layer
+import com.hermesmarcano.zen.layer.ui.ChatScreen
 import com.hermesmarcano.zen.layer.ui.LayerScreen
 import kotlinx.coroutines.launch
 
@@ -113,6 +114,7 @@ private const val WORKOUT = MainActivity.ROUTE_WORKOUT
 private const val SETTINGS = "settings"
 private const val TRIP = "trip"
 private const val LAYER = "layer"
+private const val CHAT = "chat"
 private const val RELIABILITY = MainActivity.ROUTE_RELIABILITY
 private const val NEW_ALARM = "edit:new"
 private val TABS = listOf(TODAY, WORKOUT, ALARMS, PROGRESS)
@@ -184,9 +186,11 @@ private fun ZenRoot(requestedRoute: String?, onRouteConsumed: () -> Unit) {
             route == SETTINGS -> SettingsScreen(
                 onClose = { route = lastTab },
                 onOpenLayer = { route = LAYER },
+                onOpenChat = { route = CHAT },
                 onOpenReliability = { route = RELIABILITY },
             )
-            route == LAYER -> LayerScreen(onClose = { route = lastTab })
+            route == LAYER -> LayerScreen(onClose = { route = lastTab }, onOpenChat = { route = CHAT })
+            route == CHAT -> ChatScreen(onClose = { route = lastTab })
             route == RELIABILITY -> ReliabilityScreen(content, onBack = { route = ALARMS })
             route == TRIP -> TripScreen(onClose = { route = ALARMS }, announce = announce)
             route.startsWith("edit:") -> AlarmEditScreen(
@@ -200,6 +204,6 @@ private fun ZenRoot(requestedRoute: String?, onRouteConsumed: () -> Unit) {
 
 private fun previousTab(route: String, lastTab: String): String = when {
     route == TRIP || route == RELIABILITY || route.startsWith("edit:") -> ALARMS
-    route == SETTINGS || route == LAYER -> lastTab
+    route == SETTINGS || route == LAYER || route == CHAT -> lastTab
     else -> TODAY
 }

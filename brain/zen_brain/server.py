@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import http.client
 import json
+import re
 import socket
 import sys
 import threading
@@ -31,11 +32,16 @@ MAX_EVENTS_BODY = 2 * 1024 * 1024
 HEADER_DEADLINE_S = 4.0
 REQUEST_DEADLINE_S = 30.0
 HEADER_BYTES_MAX = 16 * 1024
+# El chat espera a Hermes (y a Whisper si es voz) con la conexión abierta: más plazo que cualquier otra ruta, pero acotado.
+CHAT_OVERHEAD_S = 40.0  # plazo del chat = timeout de Hermes + esto (transcribir, validar, auditar): 100 s con los 60 s por defecto
+CHAT_JSON_MAX = 16 * 1024
+_SESSION = re.compile(r"[A-Za-z0-9\-]{8,64}")
 MAX_CONNECTIONS = 64
 # Líneas de auditoría de bajo valor (peticiones rechazadas): como mucho tantas por minuto y tipo; el resto se cuenta.
 AUDIT_LINES_PER_MINUTE = 20
 _ERRORS = {400: "bad_request", 401: "unauthorized", 404: "not_found", 405: "method_not_allowed", 411: "length_required", 413: "too_large",
-           414: "bad_request", 422: "unprocessable", 429: "too_many_events", 431: "bad_request", 503: "overloaded"}
+           414: "bad_request", 415: "unsupported_media_type", 422: "unprocessable", 429: "too_many_events", 431: "bad_request",
+           503: "overloaded"}
 _SILENT_ERRORS = (BrokenPipeError, ConnectionResetError, socket.timeout, TimeoutError, http.client.HTTPException)
 
 
@@ -301,7 +307,7 @@ def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
             if method == "GET" and path == "/healthz":
                 # Sin detalles. 503 si el adaptador no puede actuar con seguridad (auditoría o tokens rotos).
                 return self._json(200, {"status": "ok"}) if app.healthy() else self._json(503, {"status": "degraded"})
-            routes = {"/v1/events": "POST", "/v1/audio": "POST", "/v1/commands": "GET"}
+            routes = {"/v1/events": "POST", "/v1/audio": "POST", "/v1/commands": "GET", "/v1/chat": "POST"}
             if path not in routes:
                 return self._json(404, {"error": "not_found"})
             if routes[path] != method:
@@ -313,6 +319,8 @@ def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
                 self._events(device)
             elif path == "/v1/audio":
                 self._audio(device)
+            elif path == "/v1/chat":
+                self._chat(device)
             else:
                 self._commands(device, parts.query)
 
@@ -386,6 +394,41 @@ def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
             if result.overloaded:
                 return self._json(503, {"error": "overloaded"}, {"Retry-After": "30"})
             self._json(200, {"accepted": result.accepted, "duplicates": result.duplicates})
+
+        def _chat(self, device: str) -> None:
+            """Texto (`application/json`: {"session","text"}) o voz (`audio/wav` + cabecera X-Zen-Session): la respuesta va en la misma
+            petición. El teléfono manda un identificador de conversación; «Nueva conversación» es simplemente otro identificador."""
+            ctype = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+            if ctype == "application/json":
+                body = self._body(CHAT_JSON_MAX)
+                if body is None:
+                    return
+                try:
+                    data = json.loads(body.decode("utf-8"))
+                    session, text = data["session"], data["text"]
+                except (UnicodeDecodeError, ValueError, KeyError, TypeError, RecursionError):
+                    return self._json(400, {"error": "bad_request"})
+                if not isinstance(session, str) or not _SESSION.fullmatch(session) or not isinstance(text, str):
+                    return self._json(400, {"error": "bad_request"})
+                pcm = None
+            elif ctype in ("audio/wav", "audio/x-wav"):
+                session = self.headers.get("X-Zen-Session", "")
+                if not _SESSION.fullmatch(session):
+                    return self._json(400, {"error": "bad_request"})
+                body = self._body(stt.MAX_WAV_BYTES)
+                if body is None:
+                    return
+                try:
+                    pcm = stt.parse_wav(body)
+                except stt.WavError as exc:
+                    app.audit_limited("audio_rejected", device=device, reason=exc.code, bytes=len(body))
+                    return self._json(422, {"error": exc.code})
+                text = None
+            else:
+                return self._json(415, {"error": "unsupported_media_type"})
+            self._arm(app.cfg.hermes_timeout_s + CHAT_OVERHEAD_S)  # Hermes (y Whisper) pueden tardar: más plazo, pero con tope y atado al de Hermes
+            outcome = app.brain.chat(device, session, text=text, pcm=pcm)
+            self._json(outcome.status, outcome.body, outcome.headers)
 
         def _commands(self, device: str, query: str) -> None:
             # `device` de la URL se ignora a propósito: cada token solo ve las órdenes de SU dispositivo.

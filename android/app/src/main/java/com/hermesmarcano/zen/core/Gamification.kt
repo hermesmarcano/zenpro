@@ -29,6 +29,13 @@ object XpRules {
     /** Objetivo semanal de días de entreno cumplido (una vez por semana). */
     const val WEEKLY_GOAL = 50
 
+    /**
+     * Una conversación con el cerebro que cuente (al menos 3 palabras; ver ChatRules.qualifies): solo la primera de cada día da XP,
+     * y la primera por voz de cada día da otro tanto. Más conversaciones no dan más: hablar no se «farmea».
+     */
+    const val CHAT_DAY = 5
+    const val CHAT_VOICE_DAY = 5
+
     fun forTier(tier: TaskBoard.Tier): Int = when (tier) {
         TaskBoard.Tier.HIGH -> TASK_HIGH
         TaskBoard.Tier.MEDIUM -> TASK_MEDIUM
@@ -92,7 +99,10 @@ enum class Achievement(val id: String, val title: String, val description: Strin
     GOAL_WEEK("goal_week", "Semana cumplida", "Cumpliste tu objetivo semanal de entrenos."),
     GOAL_WEEKS_4("goal_weeks_4", "Un mes de constancia", "4 semanas seguidas cumpliendo tu objetivo."),
     TONNE_CLUB("tonne_club", "Diez toneladas", "Moviste 10 000 kg en total."),
-    ALARM_CHECKED("alarm_checked", "Alarma a prueba", "Comprobaste que tu alarma llega a su hora.");
+    ALARM_CHECKED("alarm_checked", "Alarma a prueba", "Comprobaste que tu alarma llega a su hora."),
+    FIRST_CHAT("first_chat", "Primera conversación", "Hablaste con tu cerebro por primera vez."),
+    FIRST_VOICE("first_voice", "Te escucha", "Le hablaste por voz y te respondió."),
+    CHAT_DAYS_7("chat_days_7", "Hablar es costumbre", "7 días distintos conversando con tu cerebro.");
 }
 
 object Achievements {
@@ -122,5 +132,8 @@ object Achievements {
         Achievement.GOAL_WEEKS_4 -> p.bestGoalWeekStreak >= 4
         Achievement.TONNE_CLUB -> p.workoutVolumeKg >= 10_000L
         Achievement.ALARM_CHECKED -> p.alarmTestsPassed >= 1
+        Achievement.FIRST_CHAT -> p.chatDays >= 1
+        Achievement.FIRST_VOICE -> p.voiceDays >= 1
+        Achievement.CHAT_DAYS_7 -> p.chatDays >= 7
     }
 }

@@ -1,6 +1,7 @@
 package com.hermesmarcano.zen.layer.link
 
 import com.hermesmarcano.zen.layer.core.BrainCommand
+import com.hermesmarcano.zen.layer.core.ChatFailure
 import com.hermesmarcano.zen.layer.core.LayerEvent
 import com.hermesmarcano.zen.layer.core.OutboxItem
 import java.io.BufferedInputStream
@@ -16,6 +17,8 @@ import org.json.JSONException
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Before
@@ -308,5 +311,92 @@ class BrainClientTest {
     @Test fun aBasePathIsKept() {
         server.on("/zen/v1/events") { Response(200) }
         assertEquals(ApiResult.Ok, client.postEvents(cfg(server.baseUrl + "/zen"), listOf(item())))
+    }
+
+    // ---------- Chat ----------
+
+    private val session = "0f9c2d4e-aaaa-bbbb-cccc-1234567890ab"
+
+    @Test fun aTextChatPostsJsonWithTheSessionAndParsesTheReply() {
+        server.on("/v1/chat") {
+            Response(
+                200,
+                """{"reply":"Te propongo la cena.","transcript":null,"commands":[
+                    {"id":"c1","type":"calendar_event","title":"Cena","start":5000000,"end":8600000,"from":"chat"},
+                    {"id":"c2","type":"pause","minutes":10}]}""".toByteArray(),
+            )
+        }
+        val result = client.chat(cfg(), session, "agéndame la cena", null) as ChatResult.Reply
+        assertEquals("Te propongo la cena.", result.reply)
+        assertNull(result.transcript)
+        assertEquals(listOf<BrainCommand>(BrainCommand.CalendarEvent("c1", "Cena", 5_000_000L, 8_600_000L, "chat"), BrainCommand.Pause("c2", 10)), result.commands)
+        val req = server.seen.single()
+        assertEquals("POST", req.method)
+        assertEquals("application/json", req.headers["content-type"])
+        assertEquals("Bearer tok", req.headers["authorization"])
+        assertFalse(req.uri.contains("tok"))
+        val body = JSONObject(String(req.body, Charsets.UTF_8))
+        assertEquals(session, body.getString("session"))
+        assertEquals("agéndame la cena", body.getString("text"))
+    }
+
+    @Test fun aVoiceChatPostsTheWavWithTheSessionHeaderAndReturnsTheTranscript() {
+        server.on("/v1/chat") { Response(200, """{"reply":"Anotado.","transcript":"comprar pan","commands":[]}""".toByteArray()) }
+        val wav = ByteArray(44 + 3_200) { it.toByte() }
+        val result = client.chat(cfg(), session, null, wav) as ChatResult.Reply
+        assertEquals("comprar pan", result.transcript)
+        val req = server.seen.single()
+        assertEquals("audio/wav", req.headers["content-type"])
+        assertEquals(session, req.headers["x-zen-session"])
+        assertTrue(wav.contentEquals(req.body))
+    }
+
+    @Test fun theReplyIsCleanedBeforeItReachesTheScreen() {
+        server.on("/v1/chat") { Response(200, """{"reply":"pago\u202e3 000 hoy\u0007","commands":[]}""".toByteArray()) }
+        assertEquals("pago3 000 hoy", (client.chat(cfg(), session, "hola", null) as ChatResult.Reply).reply)
+    }
+
+    @Test fun chatErrorsKeepTheReasonTheAdapterGives() {
+        fun failure(code: Int, error: String): ChatFailure {
+            server.seen.clear()
+            server.on("/v1/chat") { Response(code, """{"error":"$error"}""".toByteArray()) }
+            return (client.chat(cfg(), session, "hola", null) as ChatResult.Failed).failure
+        }
+        assertEquals(ChatFailure.UNAUTHORIZED, failure(401, "unauthorized"))
+        assertEquals(ChatFailure.NO_SPEECH, failure(422, "no_speech"))
+        assertEquals(ChatFailure.STT_OFF, failure(422, "stt_off"))
+        assertEquals(ChatFailure.RATE_LIMITED, failure(429, "rate_limited"))
+        assertEquals(ChatFailure.BUSY, failure(503, "busy"))
+        assertEquals(ChatFailure.COOLDOWN, failure(503, "cooldown"))
+        assertEquals(ChatFailure.SERVER_ERROR, failure(500, "internal_error"))
+        assertEquals(ChatFailure.TIMEOUT, failure(504, "brain_timeout"))
+        assertEquals(ChatFailure.BAD_REPLY, failure(502, "bad_reply"))
+        assertEquals(ChatFailure.UNAVAILABLE, failure(502, "brain_unavailable"))
+        assertEquals(ChatFailure.CHAT_OFF, failure(404, "chat_off"))
+    }
+
+    @Test fun aReplyWithoutTextOrWithJunkIsABadReplyNotACrash() {
+        server.on("/v1/chat") { Response(200, """{"commands":[]}""".toByteArray()) }
+        assertEquals(ChatFailure.BAD_REPLY, (client.chat(cfg(), session, "hola", null) as ChatResult.Failed).failure)
+        server.on("/v1/chat") { Response(200, "<html>no soy json</html>".toByteArray()) }
+        assertEquals(ChatFailure.BAD_REPLY, (client.chat(cfg(), session, "hola", null) as ChatResult.Failed).failure)
+    }
+
+    @Test fun chatNeverGoesWithoutATokenOrToAnInvalidAddress() {
+        assertEquals(ChatFailure.UNAUTHORIZED, (client.chat(cfg(token = ""), session, "hola", null) as ChatResult.Failed).failure)
+        assertEquals(ChatFailure.UNAVAILABLE, (client.chat(cfg(url = "http://192.168.1.5"), session, "hola", null) as ChatResult.Failed).failure)
+        assertTrue(server.seen.isEmpty())
+    }
+
+    @Test fun chatDoesNotFollowRedirects() {
+        server.on("/v1/chat") { Response(302, headers = mapOf("Location" to "http://evil.example/steal")) }
+        assertEquals(ChatFailure.UNAVAILABLE, (client.chat(cfg(), session, "hola", null) as ChatResult.Failed).failure)
+        assertEquals(1, server.seen.size)
+    }
+
+    @Test fun anUnreachableServerIsUnavailable() {
+        server.stop()
+        assertEquals(ChatFailure.UNAVAILABLE, (client.chat(cfg(), session, "hola", null) as ChatResult.Failed).failure)
+        server = MiniServer() // para que el @After tenga algo que cerrar
     }
 }

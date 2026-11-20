@@ -15,6 +15,7 @@ import android.os.IBinder
 import android.os.PowerManager
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
+import com.hermesmarcano.zen.layer.core.ChatRules
 import com.hermesmarcano.zen.layer.core.PcmSegment
 import com.hermesmarcano.zen.layer.core.Source
 import com.hermesmarcano.zen.layer.core.SpeechSegmenter
@@ -94,6 +95,15 @@ class AmbientAudioService : Service() {
         var busyNotified = false
         try {
             while (running) {
+                if (LayerLive.chatRecording && System.currentTimeMillis() - LayerLive.chatRecordingAtMs < CHAT_FLAG_MAX_MS) {
+                    // El chat está grabando la voz de la persona: este micrófono se suelta sin guardar nada (lo que se le dice al
+                    // chat no debe acabar también en la cola ni en el cerebro por la vía de los eventos) y se retoma al terminar.
+                    capture?.let { drop(it) }
+                    capture = null
+                    lastCheckMs = 0L
+                    Thread.sleep(CHAT_POLL_MS)
+                    continue
+                }
                 val now = System.currentTimeMillis()
                 if (now - lastCheckMs >= POLICY_CHECK_MS) {
                     lastCheckMs = now
@@ -180,6 +190,15 @@ class AmbientAudioService : Service() {
         null
     }
 
+    /** Suelta el micrófono SIN guardar el tramo en curso (a diferencia de [close]). */
+    private fun drop(capture: Capture) {
+        try {
+            capture.record.stop()
+        } catch (_: IllegalStateException) {
+        }
+        capture.record.release()
+    }
+
     private fun close(capture: Capture, runtime: LayerRuntime) {
         capture.segmenter.flush()?.let { enqueue(it, runtime, capture.startedAtMs) }
         try {
@@ -238,6 +257,10 @@ class AmbientAudioService : Service() {
         const val SAMPLE_RATE = 16_000
         private const val POLICY_CHECK_MS = 5_000L
         private const val IDLE_SLEEP_MS = 2_000L
+        private const val CHAT_POLL_MS = 200L
+
+        /** Lo máximo que puede durar una grabación del chat más un margen: pasado esto, la bandera se ignora (red de seguridad). */
+        private val CHAT_FLAG_MAX_MS = ChatRules.MAX_VOICE_MS + 5_000L
         private const val WAKE_LOCK_MS = 10 * 60_000L
         private const val MAX_AUDIO_BYTES = 200L * 1024 * 1024
 

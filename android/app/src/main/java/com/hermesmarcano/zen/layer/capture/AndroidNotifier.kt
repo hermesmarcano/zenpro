@@ -7,7 +7,6 @@ import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.provider.CalendarContract
 import android.content.pm.PackageManager
 import android.net.Uri
 import androidx.core.app.NotificationCompat
@@ -73,12 +72,7 @@ class AndroidNotifier(private val context: Context) : Notifier {
      * ningún permiso sobre el calendario. Si no hay calendario que lo atienda, no pasa nada.
      */
     override fun calendarProposal(event: BrainCommand.CalendarEvent) {
-        val insert = Intent(Intent.ACTION_INSERT)
-            .setData(CalendarContract.Events.CONTENT_URI)
-            .putExtra(CalendarContract.Events.TITLE, event.title)
-            .putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, event.startMs)
-            .putExtra(CalendarContract.EXTRA_EVENT_END_TIME, event.endMs)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val insert = CalendarIntent.insert(event.title, event.startMs, event.endMs).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         val open = PendingIntent.getActivity(
             context, ID_PROPOSAL_BASE + (event.id.hashCode() and 0xFFFF), insert, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )

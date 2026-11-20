@@ -119,7 +119,11 @@ class CommandApplier(
     private val brainDrafts = RateWindow(DRAFTS_PER_HOUR, HOUR_MS) // cada borrador es una notificación nueva con su texto
     private val proposals = RateWindow(PROPOSALS_PER_HOUR, HOUR_MS)
 
-    fun apply(command: BrainCommand): Outcome {
+    /**
+     * [announce] = `false` cuando quien pide la orden ya se la enseña a la persona en su propia pantalla (el chat): se aplican las
+     * mismas validaciones y topes, pero no se lanza además una notificación por la propuesta o el bloqueo.
+     */
+    fun apply(command: BrainCommand, announce: Boolean = true): Outcome {
         // Solo cuentan las reglas que BLOQUEAN (límite que bloquea al llegar, o franja prohibida): una regla «solo avisa» no da permiso.
         val blockable = state.current.limits.filter { it.blockAtLimit || it.window != null }.mapTo(HashSet()) { it.pkg }
         val verdict = CommandPolicy.check(command, ownPackage, state.current.seenCommandIds, blockable)
@@ -154,12 +158,12 @@ class CommandApplier(
                 }
                 is BrainCommand.Block -> {
                     val until = now + command.minutes * 60_000L
-                    if (blocks.blockUntil(command.pkg, until, BlockReason.BRAIN, now)) {
+                    if (blocks.blockUntil(command.pkg, until, BlockReason.BRAIN, now) && announce) {
                         notifier.blocked(BlockEntry(command.pkg, until, BlockReason.BRAIN))
                     }
                 }
                 is BrainCommand.Notify -> notifier.notice(command.title.ifBlank { "ZEN" }, command.text)
-                is BrainCommand.CalendarEvent -> notifier.calendarProposal(command)
+                is BrainCommand.CalendarEvent -> if (announce) notifier.calendarProposal(command)
                 is BrainCommand.Pause -> {
                     val until = now + command.minutes * 60_000L
                     state.update { it.copy(capture = it.capture.copy(pausedUntilMs = maxOf(it.capture.pausedUntilMs, until))) }

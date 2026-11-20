@@ -1,7 +1,10 @@
 package com.hermesmarcano.zen.layer.link
 
 import com.hermesmarcano.zen.layer.core.BrainUrl
+import com.hermesmarcano.zen.layer.core.ChatFailure
 import com.hermesmarcano.zen.layer.core.OutboxItem
+import org.json.JSONException
+import org.json.JSONObject
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
@@ -45,6 +48,29 @@ class BrainClient(
         }
     }
 
+    override fun chat(cfg: BrainConfig, session: String, text: String?, wav: ByteArray?): ChatResult {
+        val x = if (wav != null) {
+            exchange(cfg, "POST", "/v1/chat", "audio/wav", mapOf("X-Zen-Session" to session), wav, CHAT_READ_TIMEOUT_MS, errorBody = true)
+        } else {
+            val json = JSONObject().put("session", session).put("text", text ?: "").toString().toByteArray(Charsets.UTF_8)
+            exchange(cfg, "POST", "/v1/chat", "application/json", emptyMap(), json, CHAT_READ_TIMEOUT_MS, errorBody = true)
+        }
+        return when (x) {
+            is Exchange.Failed -> ChatResult.Failed(if (x.result == ApiResult.Unauthorized) ChatFailure.UNAUTHORIZED else ChatFailure.UNAVAILABLE)
+            is Exchange.Response -> when {
+                x.code in 200..299 -> EventJson.parseChat(x.body) ?: ChatResult.Failed(ChatFailure.BAD_REPLY)
+                else -> ChatResult.Failed(ChatFailure.fromHttp(x.code, errorCode(x.body)))
+            }
+        }
+    }
+
+    /** El `error` de `{"error": "<código>"}`, o vacío. */
+    private fun errorCode(body: String): String = try {
+        JSONObject(body).optString("error", "")
+    } catch (_: JSONException) {
+        ""
+    }
+
     private fun send(
         cfg: BrainConfig,
         method: String,
@@ -53,19 +79,44 @@ class BrainClient(
         headers: Map<String, String> = emptyMap(),
         body: ByteArray? = null,
         onBody: (String) -> Unit = {},
-    ): ApiResult {
+    ): ApiResult = when (val x = exchange(cfg, method, path, contentType, headers, body, readTimeoutMs, errorBody = false)) {
+        is Exchange.Failed -> x.result
+        is Exchange.Response -> {
+            if (x.code in 200..299) onBody(x.body)
+            classify(x.code)
+        }
+    }
+
+    /** Lo que pasó en la red: una respuesta HTTP (con su cuerpo) o un fallo ya clasificado. */
+    private sealed interface Exchange {
+        data class Response(val code: Int, val body: String) : Exchange
+        data class Failed(val result: ApiResult) : Exchange
+    }
+
+    /** [errorBody]: también lee (hasta 4 KB) el cuerpo de las respuestas de error, para leer el código que da el servidor. */
+    private fun exchange(
+        cfg: BrainConfig,
+        method: String,
+        path: String,
+        contentType: String?,
+        headers: Map<String, String>,
+        body: ByteArray?,
+        readTimeout: Int,
+        errorBody: Boolean,
+    ): Exchange {
         // Se vuelve a validar: el estado pudo cambiar o corromperse desde que se configuró.
-        val base = (BrainUrl.validate(cfg.baseUrl) as? BrainUrl.Result.Ok)?.baseUrl ?: return ApiResult.Transient("dirección del cerebro no válida")
-        if (cfg.token.isBlank()) return ApiResult.Unauthorized
+        val base = (BrainUrl.validate(cfg.baseUrl) as? BrainUrl.Result.Ok)?.baseUrl
+            ?: return Exchange.Failed(ApiResult.Transient("dirección del cerebro no válida"))
+        if (cfg.token.isBlank()) return Exchange.Failed(ApiResult.Unauthorized)
         val connection = try {
             URL(base + path).openConnection() as HttpURLConnection
         } catch (e: IOException) {
-            return ApiResult.Transient(e.message ?: "no se pudo abrir la conexión")
+            return Exchange.Failed(ApiResult.Transient(e.message ?: "no se pudo abrir la conexión"))
         }
         return try {
             connection.requestMethod = method
             connection.connectTimeout = connectTimeoutMs
-            connection.readTimeout = readTimeoutMs
+            connection.readTimeout = readTimeout
             connection.instanceFollowRedirects = false
             connection.setRequestProperty("Authorization", "Bearer ${cfg.token}")
             connection.setRequestProperty("User-Agent", userAgent)
@@ -78,11 +129,14 @@ class BrainClient(
                 connection.outputStream.use { it.write(body) }
             }
             val code = connection.responseCode
-            val text = if (code in 200..299) readLimited(connection) else ""
-            if (code in 200..299) onBody(text)
-            classify(code)
+            val text = when {
+                code in 200..299 -> readLimited(connection.inputStream, MAX_RESPONSE_BYTES)
+                errorBody -> connection.errorStream?.let { readLimited(it, MAX_ERROR_BYTES) } ?: ""
+                else -> ""
+            }
+            Exchange.Response(code, text)
         } catch (e: IOException) {
-            ApiResult.Transient(e.message ?: "sin conexión")
+            Exchange.Failed(ApiResult.Transient(e.message ?: "sin conexión"))
         } finally {
             connection.disconnect()
         }
@@ -97,12 +151,12 @@ class BrainClient(
         else -> ApiResult.Transient("HTTP $code")
     }
 
-    /** Lee como mucho 1 MB: una respuesta absurda no debe agotar la memoria. */
-    private fun readLimited(connection: HttpURLConnection): String {
+    /** Lee como mucho [max] bytes: una respuesta absurda no debe agotar la memoria. */
+    private fun readLimited(stream: java.io.InputStream, max: Int): String {
         val out = java.io.ByteArrayOutputStream()
-        connection.inputStream.use { input ->
+        stream.use { input ->
             val buffer = ByteArray(8 * 1024)
-            while (out.size() < MAX_RESPONSE_BYTES) {
+            while (out.size() < max) {
                 val n = input.read(buffer)
                 if (n < 0) break
                 out.write(buffer, 0, n)
@@ -115,5 +169,9 @@ class BrainClient(
 
     private companion object {
         const val MAX_RESPONSE_BYTES = 1_000_000
+        const val MAX_ERROR_BYTES = 4_096
+
+        /** Más que el plazo más largo del adaptador para el chat (timeout de Hermes ≤ 90 s + 40 s = 130 s): el error del servidor llega antes que el corte del teléfono. */
+        const val CHAT_READ_TIMEOUT_MS = 140_000
     }
 }

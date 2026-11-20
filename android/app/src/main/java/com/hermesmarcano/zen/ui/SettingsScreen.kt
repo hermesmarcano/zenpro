@@ -51,7 +51,7 @@ import kotlinx.coroutines.withContext
 /** Sonido de la alarma, volumen inicial, sonido de éxito y estadísticas de racha. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(onClose: () -> Unit, onOpenLayer: () -> Unit = {}, onOpenReliability: () -> Unit = {}) {
+fun SettingsScreen(onClose: () -> Unit, onOpenLayer: () -> Unit = {}, onOpenReliability: () -> Unit = {}, onOpenChat: () -> Unit = {}) {
     val context = LocalContext.current
     val repository = context.zenApp.repository
     val state by repository.state.collectAsState()
@@ -108,7 +108,10 @@ fun SettingsScreen(onClose: () -> Unit, onOpenLayer: () -> Unit = {}, onOpenReli
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontSize = 14.sp,
         )
-        OutlinedButton(onClick = onOpenLayer) { Text("Abrir la capa") }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = onOpenLayer) { Text("Abrir la capa") }
+            OutlinedButton(onClick = onOpenChat) { Text("Hablar con el cerebro") }
+        }
 
         // --- Sonido de la alarma ---
         Text("Sonido de la alarma", fontWeight = FontWeight.SemiBold, fontSize = 18.sp, modifier = Modifier.padding(top = 8.dp))

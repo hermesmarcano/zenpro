@@ -160,12 +160,59 @@ Cuerpo `audio/wav` (16 kHz, 16 bits, mono, **como mucho 29 s**: el servidor rech
 - Límites de la propia app, aunque el servidor falle: 6 avisos, 3 bloqueos y 10 borradores del cerebro por hora.
 - Un tipo desconocido se salta (el cerebro puede ser más nuevo que el teléfono). Un `404` significa «este cerebro no manda órdenes»: es válido.
 
+### `POST /v1/chat` (hablar con el cerebro)
+
+Una conversación directa: la respuesta llega **en la misma petición** (no pasa por la cola ni por `/v1/commands`). Dos formas:
+
+- Texto: `Content-Type: application/json`, cuerpo `{"session": "<uuid>", "text": "…"}` (hasta 2000 caracteres).
+- Voz: `Content-Type: audio/wav` (16 kHz, 16 bits, mono, **como mucho 29 s**) y la cabecera `X-Zen-Session: <uuid>`. El servidor
+  transcribe y contesta; la transcripción vuelve en la respuesta.
+
+`session` es un UUID por conversación: une los mensajes en el servidor (el modelo recuerda lo anterior por ella). «Nueva» en la
+pantalla crea otro. La respuesta:
+
+```json
+{"reply": "Te propongo la cena.", "transcript": null,
+ "commands": [{"id": "9f2c…", "type": "calendar_event", "title": "Cena con Marta", "start": 1763500000000, "end": 1763505400000, "from": "chat"}]}
+```
+
+- `transcript` solo viene en los mensajes de voz. `reply` es texto plano (≤ 4000 caracteres): la app lo muestra sin enlaces activos
+  y sin caracteres de control ni de dirección de texto.
+- Las órdenes son **solo** `calendar_event`, `block` y `pause` (el chat no responde a terceros ni avisa). `block` y `pause` se aplican al
+  momento (si la política los permite), y se dice en el chat lo que se hizo; si la respuesta llega con la pantalla cerrada, además sale una notificación. El adaptador descarta las demás
+  y la app las vuelve a filtrar; las que quedan pasan por la **misma validación y los mismos topes** que las de la cola
+  (`CommandPolicy` + `CommandApplier`: un bloqueo solo si la app tiene una regla que bloquee en «Límites», etc.). Un evento es una
+  **tarjeta con «Agendar»**: lo guardas tú en el calendario. Si la app rechaza una orden, el chat lo dice (no la da por hecha).
+- Errores (`{"error": "<código>"}`): `401/403` token; `404 chat_off` chat apagado en el servidor; `413/400/415` mal formado;
+  `422` `no_speech` / `stt_off` / `stt_failed` / `not_wav`; `429` tope de mensajes; `503 busy|cooldown` (el cortacircuitos del servidor
+  también vale para el chat); `502 bad_reply|brain_unavailable`; `504 brain_timeout`; `500 internal_error`. Los mensajes rechazados
+  antes de llegar al modelo (vacío, voz apagada, servidor ocupado) no gastan del tope de mensajes. La app traduce cada uno a un motivo que se lee en la pantalla, con «Reintentar» cuando esperar puede arreglarlo.
+- Plazo: el servidor espera como mucho `ZEN_HERMES_TIMEOUT` (60 s por defecto, máx. 90) + 40 s y no reintenta al modelo; el teléfono espera
+  hasta 140 s para que llegue el error del servidor antes que su propio corte.
+
+#### Pantalla «Chat»
+
+Se abre desde Capa → Cerebro («Hablar con el cerebro») o Ajustes. Escribes y tocas «Enviar», o tocas «Hablar», dices lo que quieras
+(hasta 29 s) y tocas «Enviar» (o «Cancelar»). Reglas:
+
+- **Pausa y sin cerebro = sin red ni micrófono**: con la capa en pausa, o sin dirección/token, el chat no envía ni graba nada.
+- El **audio se graba en memoria**, se manda y se olvida (nunca se guarda en disco). Mientras el chat graba, la escucha ambiental (si estaba
+  encendida) suelta el micrófono y descarta lo que tenía a medias: lo que le dices al chat no llega también por la vía de los eventos. Salir de la pantalla o mandar la app al fondo
+  corta la grabación. Pide el permiso del micrófono la primera vez que tocas «Hablar».
+- La **conversación se guarda cifrada** en el teléfono (`layer/chat.bin`, AES-256-GCM con la clave del Keystore, hasta 100 mensajes),
+  para que sobreviva a que MIUI cierre la app. Si no se puede cifrar, no se guarda (nunca en claro); si el archivo no se puede leer
+  *ahora*, no se pisa hasta que empieces una conversación nueva. «Borrar todo…» y «Quitar cerebro» (Capa) la borran también.
+- En el servidor la auditoría solo guarda longitudes y códigos: **nunca** la conversación.
+- **Gamificación** (sobria, sin castigos): una conversación de 3 palabras o más suma **+5 XP la primera vez de cada día**, y otros
+  **+5 XP la primera por voz de cada día**; más mensajes el mismo día no suman. Logros: *Primera conversación*, *Te escucha* (primera
+  por voz) y *Hablar es costumbre* (7 días distintos). La pantalla dice qué suma hoy y cuántos días llevas; un día sin hablar no quita nada.
+
 ## Qué se guarda, dónde y cuánto
 
 - **En el teléfono**, en el almacenamiento privado de la app (`allowBackup=false`): estado (`layer/layer.json`), memoria
-  (`zen-layer.db`, SQLite con búsqueda FTS4 sin tildes ni mayúsculas) y audio pendiente (`layer/audio/`).
+  (`zen-layer.db`, SQLite con búsqueda FTS4 sin tildes ni mayúsculas), audio pendiente (`layer/audio/`) y la conversación del chat (`layer/chat.bin`, cifrada).
 - **Qué va cifrado**: con una clave del **Keystore de Android** (AES-256-GCM, respaldada por hardware en el Redmi Note 8, que no
-  sale del teléfono) se cifran **el token del cerebro, el texto de los eventos en cola y el audio pendiente**. Si el Keystore falla
+  sale del teléfono) se cifran **el token del cerebro, el texto de los eventos en cola, el audio pendiente y la conversación del chat**. Si el Keystore falla
   no se guarda nada en claro: el cambio falla y la pantalla lo dice. Un token guardado en claro por una versión anterior se
   vuelve a escribir cifrado al abrir la capa.
 - **Un fallo pasajero no borra nada**: si el Keystore no responde *ahora* (distinto de «la clave ya no existe»), el token cifrado se
@@ -177,8 +224,8 @@ Cuerpo `audio/wav` (16 kHz, 16 bits, mono, **como mucho 29 s**: el servidor rech
   esconde del todo el *texto*, que también está en la memoria: no lo vendas como más de lo que es.
 - **Retención**: memoria 30 días o 20 000 filas; cola de envío **24 horas o 500 elementos**; audio hasta que se envía (tope de 200 MB).
   Con la capa en pausa no sale nada, así que lo que espera se retiene hasta 24 h como mucho y luego se descarta.
-- **Borrar**: «Borrar todo…» en la pantalla Capa (memoria + cola + audio); vetar una app también olvida lo que había de ella.
-  «Quitar cerebro» borra además la cola de envío y el audio pendiente: eran para ese cerebro y no deben acabar en otro servidor
+- **Borrar**: «Borrar todo…» en la pantalla Capa (memoria + cola + audio + conversaciones del chat); vetar una app también olvida lo que había de ella.
+  «Quitar cerebro» borra además la cola de envío, el audio pendiente y las conversaciones del chat: eran para ese cerebro y no deben acabar en otro servidor
   que se configure después (la memoria local se conserva).
 - **Fuera del teléfono**: nada, salvo lo que mandes al cerebro que tú configures.
 

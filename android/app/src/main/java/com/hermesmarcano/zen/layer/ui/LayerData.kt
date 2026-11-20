@@ -124,20 +124,22 @@ internal fun MemorySection(env: LayerEnv, state: LayerState) {
         AlertDialog(
             onDismissRequest = { confirmWipe = false },
             title = { Text("¿Borrar toda la memoria?") },
-            text = { Text("Se borra lo recordado, lo que estaba en cola para el cerebro y el audio guardado en este teléfono. No se puede deshacer.") },
+            text = { Text("Se borra lo recordado, lo que estaba en cola para el cerebro, el audio guardado y las conversaciones del chat en este teléfono. No se puede deshacer.") },
             confirmButton = {
                 TextButton(onClick = {
                     confirmWipe = false
                     scope.launch {
-                        withContext(Dispatchers.IO) {
-                            try {
-                                env.runtime.timeline.deleteAll()
-                                env.runtime.outbox.clear()
-                                env.runtime.audioFiles.deleteAll()
-                            } catch (_: Exception) {
-                            }
+                        val failures = withContext(Dispatchers.IO) {
+                            // Cada paso por separado: que uno falle no debe dejar sin borrar los demás (ni decir que se borró todo si no).
+                            val steps = listOf<() -> Unit>(
+                                { check(env.runtime.chat.wipe()) { "la conversación sigue en el disco" } },
+                                { env.runtime.timeline.deleteAll() },
+                                { env.runtime.outbox.clear() },
+                                { env.runtime.audioFiles.deleteAll() },
+                            )
+                            steps.count { step -> runCatching { step() }.isFailure }
                         }
-                        env.say("Memoria borrada.")
+                        env.say(if (failures == 0) "Memoria borrada." else "No se pudo borrar todo (falló $failures de 4 pasos): vuelve a intentarlo.")
                         reload++
                     }
                 }) { Text("Borrar") }
@@ -154,7 +156,7 @@ private const val RESULTS = 30
 // ---------------------------------------------------------------------------------------------------------------------
 
 @Composable
-internal fun BrainSection(env: LayerEnv, state: LayerState) {
+internal fun BrainSection(env: LayerEnv, state: LayerState, onOpenChat: () -> Unit = {}) {
     var url by remember(state.brainUrl) { mutableStateOf(state.brainUrl) }
     var token by remember(state.brainToken) { mutableStateOf(state.brainToken) }
     var syncing by remember { mutableStateOf(false) }
@@ -226,10 +228,16 @@ internal fun BrainSection(env: LayerEnv, state: LayerState) {
                     env.runtime.outbox.clear()
                     env.runtime.audioFiles.deleteAll()
                 }
+                env.runtime.runIo {
+                    // Las conversaciones eran con ESE cerebro.
+                    val erased = env.runtime.chat.wipe()
+                    if (!erased) env.say("Cerebro quitado, pero no se pudo borrar la conversación del chat: usa «Borrar todo…».")
+                }
                 env.say("Cerebro quitado y su cola de envío borrada.")
             },
         ) { Text("Quitar cerebro") }
     }
+    OutlinedButton(enabled = state.brainConfigured, onClick = onOpenChat) { Text("Hablar con el cerebro (texto o voz)") }
     Hint("ID de este teléfono: ${state.deviceId.ifBlank { "se crea al guardar el cerebro" }}")
     Hint(state.lastSyncOkAtMs?.let { "Última sincronización correcta: ${formatDateTime(it)}." } ?: "Aún no se ha sincronizado.")
 }

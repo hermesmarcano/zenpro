@@ -13,18 +13,25 @@ import com.hermesmarcano.zen.layer.core.LimitEngine
 import com.hermesmarcano.zen.layer.core.OutboxStore
 import com.hermesmarcano.zen.layer.core.SystemDayClock
 import com.hermesmarcano.zen.layer.core.TimelineStore
+import com.hermesmarcano.zen.core.GameMessages
+import com.hermesmarcano.zen.data.GameEngine
 import com.hermesmarcano.zen.layer.data.AudioFiles
 import com.hermesmarcano.zen.layer.data.LayerDatabase
 import com.hermesmarcano.zen.layer.data.LayerStateRepository
+import com.hermesmarcano.zen.layer.data.SealedChatStore
 import com.hermesmarcano.zen.layer.data.SqliteOutbox
 import com.hermesmarcano.zen.layer.data.SqliteTimeline
 import com.hermesmarcano.zen.layer.link.BrainClient
+import com.hermesmarcano.zen.layer.link.ChatController
 import com.hermesmarcano.zen.layer.link.EventJson
 import com.hermesmarcano.zen.layer.link.SyncEngine
+import com.hermesmarcano.zen.layer.link.brainConfigOf
 import com.hermesmarcano.zen.zenApp
 import java.io.File
 import java.io.IOException
+import java.time.LocalDate
 import java.util.UUID
+import java.util.concurrent.Executor
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
@@ -36,6 +43,12 @@ object LayerLive {
     @Volatile var accessibilityConnected = false
     @Volatile var listenerConnected = false
     @Volatile var audioRunning = false
+
+    /** El chat está grabando la voz de la persona: la escucha ambiental suelta el micrófono (no debe oír ni guardar lo que se le dice al chat). */
+    @Volatile var chatRecording = false
+
+    /** Desde cuándo: la escucha ambiental solo respeta la bandera durante lo que puede durar una grabación (por si algo la dejara pegada). */
+    @Volatile var chatRecordingAtMs = 0L
 }
 
 /** Todas las piezas de la capa, creadas una vez por proceso. Los servicios la sacan de [ZenApp][com.hermesmarcano.zen.ZenApp]. */
@@ -95,6 +108,47 @@ class LayerRuntime(private val app: Application) {
     val commands: CommandApplier by lazy { CommandApplier(state, blockActions, drafts, notifier, app.packageName) }
     val brain: BrainClient by lazy { BrainClient("ZEN-Layer/${BuildConfig.VERSION_NAME}") }
     val sync: SyncEngine by lazy { SyncEngine(state, outbox, audioFiles, brain, commands) }
+
+    /** La conversación con el cerebro, cifrada en el teléfono. Un hilo propio para la red (una respuesta puede tardar más de un minuto). */
+    // Un grupo de hilos, no uno: tras «Nueva conversación» la petición vieja puede seguir esperando al servidor (hasta ~2 min) y la nueva no debe hacer cola detrás.
+    private val chatNet: ExecutorService = Executors.newCachedThreadPool { r -> Thread(r, "zen-layer-chat").apply { isDaemon = true } }
+    val chat: ChatController by lazy {
+        ChatController(
+            api = brain,
+            brain = { brainConfigOf(state.current) },
+            paused = { state.current.capture.isPaused(System.currentTimeMillis()) },
+            store = SealedChatStore(File(app.filesDir, "layer/chat.bin"), secrets),
+            recorder = AndroidVoiceRecorder(app),
+            // Mismas validaciones y topes que las órdenes de la cola.
+            // Con la pantalla a la vista el chat ya enseña lo que se hizo; si la respuesta llega con ella cerrada, avisa como las órdenes de la cola.
+            applyCommand = { commands.apply(it, announce = !chat.watched) },
+            appLabel = { pkg -> state.current.limits.firstOrNull { it.pkg == pkg }?.label?.takeIf { it.isNotBlank() } ?: pkg },
+            onTurn = ::recordChatTurn,
+            net = Executor { task -> chatNet.execute { guarded(task) } },
+            io = Executor { task -> runIo { task.run() } },
+        )
+    }
+
+    /** Una excepción suelta en un hilo de Android mata la app: aquí se traga (el controlador ya cuenta con fallos de red). */
+    private fun guarded(task: Runnable) {
+        try {
+            task.run()
+        } catch (_: Exception) {
+        }
+    }
+
+    /** Una conversación que cuenta: da su XP del día (con tope) y devuelve lo que se ganó, ya redactado. */
+    private fun recordChatTurn(voice: Boolean): List<String> {
+        var lines: List<String> = emptyList()
+        try {
+            app.zenApp.repository.update { s ->
+                GameEngine.recordChat(s, voice, LocalDate.now()).also { lines = GameMessages.describe(it.events) }.state
+            }
+        } catch (_: IOException) {
+            return emptyList() // no se guardó: no se anuncia un XP que no existe
+        }
+        return lines
+    }
 
     /** Identificador anónimo de este teléfono para el cerebro. Se genera una vez. */
     fun ensureDeviceId() {

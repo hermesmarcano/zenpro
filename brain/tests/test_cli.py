@@ -64,6 +64,16 @@ class ConfigTest(unittest.TestCase):
             with self.assertRaises(ConfigError, msg=str(bad)):
                 from_env({"ZEN_HERMES_API_KEY": KEY, **bad})
 
+    def test_chat_settings(self):
+        cfg = from_env({"ZEN_HERMES_API_KEY": KEY})
+        self.assertEqual((cfg.chat, cfg.max_chat_per_hour, cfg.max_chat_per_day, cfg.chat_concurrency), (True, 60, 400, 2))
+        cfg = from_env({"ZEN_HERMES_API_KEY": KEY, "ZEN_CHAT": "off", "ZEN_MAX_CHAT_PER_HOUR": "5", "ZEN_MAX_CHAT_PER_DAY": "50", "ZEN_CHAT_CONCURRENCY": "1"})
+        self.assertEqual((cfg.chat, cfg.max_chat_per_hour, cfg.max_chat_per_day, cfg.chat_concurrency), (False, 5, 50, 1))
+        for bad in ({"ZEN_CHAT": "tal vez"}, {"ZEN_MAX_CHAT_PER_HOUR": "0"}, {"ZEN_MAX_CHAT_PER_HOUR": "1001"}, {"ZEN_MAX_CHAT_PER_DAY": "10001"},
+                    {"ZEN_CHAT_CONCURRENCY": "0"}, {"ZEN_CHAT_CONCURRENCY": "9"}, {"ZEN_CHAT_CONCURRENCY": "dos"}):
+            with self.assertRaises(ConfigError, msg=str(bad)):
+                from_env({"ZEN_HERMES_API_KEY": KEY, **bad})
+
     def test_a_valid_override(self):
         cfg = from_env({"ZEN_HERMES_API_KEY": KEY, "ZEN_BLOCK_ALLOWLIST": "com.zhiliaoapp.musically, com.instagram.android",
                         "ZEN_MODEL_KINDS": "notification,screen", "ZEN_STT": "off", "ZEN_PORT": "9000"})

@@ -1,6 +1,7 @@
 package com.hermesmarcano.zen.layer.link
 
 import com.hermesmarcano.zen.layer.core.BrainCommand
+import com.hermesmarcano.zen.layer.core.ChatFailure
 import com.hermesmarcano.zen.layer.core.CommandPolicy
 import com.hermesmarcano.zen.layer.core.LayerEvent
 import com.hermesmarcano.zen.layer.core.OutboxItem
@@ -68,5 +69,32 @@ class BrainLiveTest {
 
         // 5. Un token equivocado es «token rechazado», no un fallo de red.
         assertEquals(ApiResult.Unauthorized, client.postEvents(cfg.copy(token = "x".repeat(43)), listOf(item)))
+    }
+
+    @Test fun theAppClientChatsWithTheRealAdapter() {
+        assumeTrue("sin adaptador en marcha: se omite", !url.isNullOrBlank() && !token.isNullOrBlank())
+        val cfg = BrainConfig(url!!, token!!, "dev-live-test")
+        val client = BrainClient("ZEN-Layer/live-test")
+        val session = java.util.UUID.randomUUID().toString()
+
+        // 1. Texto: la respuesta llega en la misma petición, con las órdenes que el chat admite (agendar y pausar), no las de otro tipo.
+        val reply = client.chat(cfg, session, "agéndame la cena con Marta mañana a las 9", null)
+        reply as ChatResult.Reply
+        assertEquals("Te propongo la cena.", reply.reply)
+        assertEquals("el borrador no es del chat y el adaptador lo quita", 2, reply.commands.size)
+        assertTrue(reply.commands[0] is BrainCommand.CalendarEvent)
+        assertTrue(reply.commands[1] is BrainCommand.Pause)
+        val proposal = reply.commands.filterIsInstance<BrainCommand.CalendarEvent>().single()
+        assertEquals("el origen lo fija el servidor", "chat", proposal.from)
+        assertEquals(90 * 60_000L, proposal.endMs - proposal.startMs)
+        assertEquals(CommandPolicy.Verdict.ACCEPT, CommandPolicy.check(proposal, "com.hermesmarcano.zen.xiaomi", emptySet()))
+        assertTrue("las órdenes del chat llevan id propio", reply.commands.all { it.id.isNotBlank() })
+
+        // 2. Voz: este adaptador de pruebas no tiene la transcripción activada y lo dice con su motivo.
+        val wav = WavEncoder.encode(ShortArray(16_000) { (it % 100).toShort() }, 16_000)
+        assertEquals(ChatFailure.STT_OFF, (client.chat(cfg, session, null, wav) as ChatResult.Failed).failure)
+
+        // 3. Un token equivocado es «token rechazado».
+        assertEquals(ChatFailure.UNAUTHORIZED, (client.chat(cfg.copy(token = "x".repeat(43)), session, "hola", null) as ChatResult.Failed).failure)
     }
 }

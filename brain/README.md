@@ -25,9 +25,10 @@ Protocolo con el teléfono: [`docs/XIAOMI-LAYER.md`](../docs/XIAOMI-LAYER.md). E
 | El modelo no elige a quién se responde | `draft_reply` va a la conversación **del propio evento** (la fija el adaptador) y solo para notificaciones; nunca se envía solo (la persona lo aprueba en el teléfono) |
 | El modelo no elige el título de un aviso | Siempre «ZEN»; ≤ 200 caracteres y **sin enlaces** |
 | Propuestas de calendario | `calendar_event`: el modelo da título, hora **local** (`AAAA-MM-DDTHH:MM`, sin zona) y duración; el adaptador lo convierte con `ZEN_TIMEZONE`, exige que empiece entre hace 10 min y dentro de un año, pone él el origen (`from`), limita a 6 por hora y lo entrega como propuesta: **nunca se agenda solo** (el teléfono abre el calendario con el evento relleno y lo guardas tú) |
+| Chat | `POST /v1/chat` (texto, o audio WAV): responde **en la misma petición** y solo acepta `calendar_event`, `block` y `pause` (nunca `draft_reply` ni `notify`: en el chat no hay a quién responder). Las órdenes pasan por la **misma política** que las de los eventos (lista de apps, topes, protegidas) y viajan en la respuesta, no en la cola. Tiene tope propio (60/h y 400/día, `ZEN_MAX_CHAT_PER_HOUR/DAY`), 2 a la vez (`ZEN_CHAT_CONCURRENCY`) y su sesión en Hermes (`zen-<dispositivo>-chat-<conversación>`). El mensaje va entre `<MENSAJE id="…">` aleatorio y saneado como el resto; la auditoría guarda solo longitudes y si fue voz, **nunca** la conversación |
 | Bloqueos acotados | Solo apps de `ZEN_BLOCK_ALLOWLIST` (vacía por defecto) y nunca protegidas; clamp a `ZEN_BLOCK_MAX_MINUTES`; 3 por hora; **tope de minutos por día**. El teléfono además solo bloquea apps con una regla que bloquea en «Límites» |
 | Pausas acotadas | Clamp, 2 por hora y **tope de minutos por día** (varias órdenes no se encadenan en una pausa permanente) |
-| Cortacircuitos | Respuestas no-JSON en ráfaga, bloqueos o pausas en ráfaga, o 5 intentos sospechosos (bloquear Ajustes, apps fuera de la lista…) en 10 min → alerta en la auditoría y **se deja de consultar al modelo 10 min** |
+| Cortacircuitos | Respuestas no-JSON en ráfaga, bloqueos o pausas en ráfaga, o 5 intentos sospechosos (bloquear Ajustes, apps fuera de la lista…) en 10 min → alerta en la auditoría y **se deja de consultar al modelo 10 min** (también para el chat: responde `503 cooldown`) |
 | Coste y avalancha acotados | Tope de llamadas al modelo por hora y por día; tope de eventos aceptados por hora (429); cola acotada (503) |
 | Sin rastro de contenido | La auditoría guarda ids, tamaños y códigos fijos, **nunca texto** (ni del usuario ni del modelo) ni tokens; sin registro de acceso. Si no se puede auditar, **no se emite ninguna orden** |
 | Audio | WAV validado **antes** de decodificar (PCM16, mono, 16 kHz, ≤ 30 s, tamaño real); se decodifica en memoria con `wave` y se pasa un array a Whisper: nunca se escribe en disco ni se pasan rutas |
@@ -117,7 +118,7 @@ zenctl check                 # configuración y permisos
 ## Decisiones respecto al spec original
 
 - **Protocolo con el teléfono**: se mantiene el que la app ya habla (probado): lotes en `/v1/events`, audio WAV crudo en `/v1/audio`
-  (no `wav_b64`: pesa un tercio menos) y las órdenes se **recogen** con `GET /v1/commands`. El teléfono nunca *manda* órdenes ni las
+  (no `wav_b64`: pesa un tercio menos) y las órdenes se **recogen** con `GET /v1/commands`. El chat es aparte: `POST /v1/chat` (texto JSON o WAV con `X-Zen-Session`) contesta en la misma petición, con las órdenes dentro (ver `docs/XIAOMI-LAYER.md`). El teléfono nunca *manda* órdenes ni las
   pide con contenido: solo recoge las que decidió el adaptador, aisladas por token (el parámetro `device` de la URL se ignora).
 - **Eventos de la app** que no son notificación, pantalla o voz (`usage`, `system`, `override`) se aceptan y se descartan (si se rechazaran,
   el teléfono reintentaría). `screen` llega al adaptador pero **no al modelo** salvo que lo actives en `ZEN_MODEL_KINDS`.
@@ -149,7 +150,7 @@ zenctl check                 # configuración y permisos
 
 Además de las pruebas unitarias, `android/.../link/BrainLiveTest.kt` ejecuta el **cliente real de la app** (`BrainClient`, `EventJson`,
 `WavEncoder`, `CommandPolicy`) contra un adaptador de verdad: manda una notificación (y la reenvía), un tramo de voz, recoge el borrador, lo valida con la
-política de la app, comprueba el cursor y que un token malo sale como «rechazado». No corre en el CI normal (se omite sin adaptador):
+política de la app, comprueba el cursor y que un token malo sale como «rechazado»; y chatea (la respuesta con sus órdenes ya filtradas, el error de voz con su motivo). No corre en el CI normal (se omite sin adaptador):
 
 ```bash
 # 1) un adaptador de pruebas (con un Hermes simulado) en 127.0.0.1:18790; el token queda en <dir>/ready
@@ -160,7 +161,7 @@ ZEN_BRAIN_LIVE_URL=http://127.0.0.1:18790 ZEN_BRAIN_LIVE_TOKEN=<token> ./gradlew
 ## Pruebas
 
 ```bash
-cd brain && python3 -m unittest discover -s . -t . -p "test_*.py"     # ~140 pruebas, ~40 s, sin dependencias
+cd brain && python3 -m unittest discover -s . -t . -p "test_*.py"     # ~190 pruebas, ~1 min, sin dependencias
 ```
 
 Cubren: autenticación y rotación de tokens, límites HTTP (tamaños, framing, ranuras, plazos), saneado y anti-inyección, esquema de la

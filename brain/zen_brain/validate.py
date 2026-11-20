@@ -58,10 +58,14 @@ class Candidate:
     start: str = ""  # calendar_event: «AAAA-MM-DDTHH:MM» local
 
 
+REPLY_MAX_CHARS = 4000
+
+
 @dataclass
 class ModelOutput:
     valid_json: bool
     commands: list[Candidate] = field(default_factory=list)
+    reply: str = ""  # solo en el chat
     # Códigos fijos (nunca texto del modelo) de por qué se descartó algo.
     rejected: list[str] = field(default_factory=list)
 
@@ -83,22 +87,41 @@ def _reject_constant(_: str) -> object:
     raise ValueError("constante no permitida")
 
 
-def parse_model_output(content: str, cfg: config.Config) -> ModelOutput:
+def parse_model_output(
+    content: str, cfg: config.Config, *, want_reply: bool = False, allowed: frozenset[str] | None = None
+) -> ModelOutput:
+    """`want_reply`: respuesta de chat, que lleva además `reply` (texto para la persona). `allowed`: tipos de orden que ese contexto
+    admite (el resto se descarta con «not_in_context»)."""
     if not isinstance(content, str) or len(content) > MAX_CONTENT_CHARS:
         return ModelOutput(False, rejected=["not_json"])
     try:
         data = json.loads(content, object_pairs_hook=_no_duplicates, parse_constant=_reject_constant)
     except (ValueError, RecursionError):
         return ModelOutput(False, rejected=["not_json"])
-    if not isinstance(data, dict) or not isinstance(data.get("commands"), list):
+    if not isinstance(data, dict):
+        return ModelOutput(False, rejected=["bad_shape"])
+    reply = ""
+    if want_reply:
+        # En el chat `commands` es opcional (casi siempre va vacío) y `reply` es obligatorio.
+        reply = clean_output_text(data.get("reply"), REPLY_MAX_CHARS)
+        if not reply:
+            return ModelOutput(False, rejected=["bad_shape"])
+        commands = data.get("commands", [])
+        data = {**data, "commands": [] if commands is None else commands}  # «commands»: null es habitual y no es un error
+    if not isinstance(data.get("commands"), list):
         return ModelOutput(False, rejected=["bad_shape"])
 
-    out = ModelOutput(True)
+    out = ModelOutput(True, reply=reply)
     items = data["commands"]
     if len(items) > MAX_COMMANDS:
         out.rejected.append("too_many")  # una sola entrada: una lista enorme no debe inflar la auditoría
         items = items[:MAX_COMMANDS]
     for item in items:
+        kind = item.get("type") if isinstance(item, dict) else None
+        # `isinstance(kind, str)`: un «type» que sea una lista o un objeto no es hashable y `in` lanzaría TypeError.
+        if allowed is not None and isinstance(kind, str) and kind in _ALLOWED_KEYS and kind not in allowed:
+            out.rejected.append("not_in_context")
+            continue
         candidate, reason = _check_command(item, cfg)
         if candidate is None:
             out.rejected.append(reason)
