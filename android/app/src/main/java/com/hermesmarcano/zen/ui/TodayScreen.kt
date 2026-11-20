@@ -113,10 +113,12 @@ fun TodayScreen(
     onOpenSettings: () -> Unit,
     announce: (text: String, action: String?, onAction: (() -> Unit)?) -> Unit,
     onOpenAlarms: () -> Unit = {},
+    onOpenWorkout: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val repository = context.zenApp.repository
     val state by repository.state.collectAsState()
+    val workoutData by context.zenApp.workouts.data.collectAsState()
     val haptic = LocalHapticFeedback.current
 
     // El día puede cambiar con la app abierta (medianoche): se relee al volver a la pantalla.
@@ -210,6 +212,22 @@ fun TodayScreen(
         }
         item(key = "summary") {
             SummaryCard(isToday = isToday, today = today, nowMillis = nowMillis, tasks = stored, onOpenSettings = onOpenSettings, onOpenAlarms = onOpenAlarms)
+        }
+        // Entreno: solo si ya hay rutinas o un entrenamiento en curso (no se insiste a quien no lo usa).
+        val activeWorkout = workoutData.active
+        val nextRoutine = if (isToday) com.hermesmarcano.zen.core.Rotation.next(workoutData.routines, workoutData.history) else null
+        if (activeWorkout != null || nextRoutine != null) {
+            item(key = "workout") {
+                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), shape = RoundedCornerShape(14.dp)) {
+                    Row(modifier = Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(if (activeWorkout != null) "Entrenamiento en curso" else "Te toca entrenar", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(activeWorkout?.routineName ?: nextRoutine?.name.orEmpty(), fontWeight = FontWeight.SemiBold)
+                        }
+                        TextButton(onClick = onOpenWorkout) { Text(if (activeWorkout != null) "Continuar" else "Ver") }
+                    }
+                }
+            }
         }
         item(key = "days") {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

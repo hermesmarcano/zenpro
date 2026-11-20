@@ -3,8 +3,11 @@ package com.hermesmarcano.zen
 import android.app.Application
 import android.content.Context
 import com.hermesmarcano.zen.alarm.Notifications
+import com.hermesmarcano.zen.alarm.RestTimer
+import com.hermesmarcano.zen.data.AlarmLog
 import com.hermesmarcano.zen.layer.capture.LayerRuntime
 import com.hermesmarcano.zen.data.StateRepository
+import com.hermesmarcano.zen.data.WorkoutRepository
 import com.hermesmarcano.zen.photo.PhotoStore
 import com.hermesmarcano.zen.sound.SoundStorage
 import com.hermesmarcano.zen.core.TaskBoard
@@ -15,6 +18,13 @@ import java.time.LocalDate
 
 class ZenApp : Application() {
     lateinit var repository: StateRepository
+        private set
+
+    lateinit var workouts: WorkoutRepository
+        private set
+
+    /** Qué pasó con cada alarma (programada, recibida, perdida…): para diagnosticar, ver [com.hermesmarcano.zen.core.AlarmHealth]. */
+    lateinit var alarmLog: AlarmLog
         private set
 
     /** La capa inteligente (captura, límites, enlace con el cerebro). Perezosa: no cuesta nada si no se usa. */
@@ -37,7 +47,10 @@ class ZenApp : Application() {
     override fun onCreate() {
         super.onCreate()
         repository = StateRepository(File(filesDir, "state.json"))
+        alarmLog = AlarmLog(File(filesDir, "alarm_log.json"))
+        workouts = WorkoutRepository(File(filesDir, "workouts.json"), File(filesDir, "active_workout.json"))
         Notifications.createChannels(this)
+        RestTimer.createChannels(this)
         tidyState()
         // Fotos de referencia de anclas que nunca se confirmaron (la app se cerró a mitad del alta).
         PhotoStore.deleteOrphans(this, repository.state.value)

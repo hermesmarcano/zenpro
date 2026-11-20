@@ -12,11 +12,18 @@ internal object StaticTrack {
      * fallo para que quien llama use su plan B en vez de "sonar" en silencio. (En dispositivo `write` de
      * una pista estática devuelve las muestras escritas; el simulador de pruebas devuelve 0.)
      */
-    fun create(samples: FloatArray, sampleRate: Int, loop: Boolean, gain: Float, sonification: Boolean = true): AudioTrack {
+    fun create(
+        samples: FloatArray,
+        sampleRate: Int,
+        loop: Boolean,
+        gain: Float,
+        sonification: Boolean = true,
+        usage: Int = AudioAttributes.USAGE_ALARM,
+    ): AudioTrack {
         require(samples.isNotEmpty()) { "sin muestras" }
         val pcm = ShortArray(samples.size) { (samples[it].coerceIn(-1f, 1f) * Short.MAX_VALUE).toInt().toShort() }
         val attributes = AudioAttributes.Builder()
-            .setUsage(AudioAttributes.USAGE_ALARM)
+            .setUsage(usage)
             .setContentType(if (sonification) AudioAttributes.CONTENT_TYPE_SONIFICATION else AudioAttributes.CONTENT_TYPE_MUSIC)
             .build()
         val format = AudioFormat.Builder()

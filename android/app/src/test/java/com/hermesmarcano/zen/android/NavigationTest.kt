@@ -6,6 +6,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToNode
 import androidx.test.core.app.ApplicationProvider
 import com.hermesmarcano.zen.ZenApp
 import com.hermesmarcano.zen.alarm.AlarmRuntime
@@ -122,10 +123,17 @@ class TripAndProgressUiTest {
         compose.setContent { ZenTheme { ProgressScreen(androidx.compose.ui.Modifier, onOpenSettings = {}) } }
         compose.onNodeWithText("Nivel 2").assertIsDisplayed()
         compose.onNodeWithText("Nivel 2 · Constante").assertIsDisplayed()
-        compose.onNodeWithText("Logros · 1 de ${Achievement.entries.size}").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("Primer despertar").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("Un mes").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Tareas completadas").assertIsDisplayed()
+        // La lista es perezosa y ahora es larga (estadísticas de entreno + más logros): se desplaza hasta cada elemento.
+        val list = compose.onNode(androidx.compose.ui.test.hasScrollAction())
+        list.performScrollToNode(androidx.compose.ui.test.hasText("Logros · 1 de ${Achievement.entries.size}"))
+        compose.onNodeWithText("Logros · 1 de ${Achievement.entries.size}").assertExists()
+        list.performScrollToNode(androidx.compose.ui.test.hasText("Primer despertar"))
+        compose.onNodeWithText("Primer despertar").assertExists()
+        list.performScrollToNode(androidx.compose.ui.test.hasText("Un mes"))
+        compose.onNodeWithText("Un mes").assertExists()
+        list.performScrollToNode(androidx.compose.ui.test.hasText("Diez toneladas"))
+        compose.onNodeWithText("Diez toneladas").assertExists()
     }
 }
 

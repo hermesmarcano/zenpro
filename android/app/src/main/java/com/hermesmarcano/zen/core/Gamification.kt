@@ -19,6 +19,16 @@ object XpRules {
     /** Tope de XP por tareas en un día: borrar y volver a crear tareas no da más. */
     const val DAILY_TASK_XP_CAP = 100
 
+    /** Entrenamiento que cuenta (≥ 3 series de trabajo y ≥ 5 min). Solo el primero de cada día da XP. */
+    const val WORKOUT = 40
+
+    /** Por cada ejercicio en el que se bate un récord personal, con tope por entrenamiento. */
+    const val WORKOUT_RECORD = 5
+    const val WORKOUT_RECORD_MAX = 3
+
+    /** Objetivo semanal de días de entreno cumplido (una vez por semana). */
+    const val WEEKLY_GOAL = 50
+
     fun forTier(tier: TaskBoard.Tier): Int = when (tier) {
         TaskBoard.Tier.HIGH -> TASK_HIGH
         TaskBoard.Tier.MEDIUM -> TASK_MEDIUM
@@ -74,7 +84,15 @@ enum class Achievement(val id: String, val title: String, val description: Strin
     FULL_HOUSE("full_house", "Diez de diez", "Completaste una lista entera de 10 tareas."),
     TRAVELER("traveler", "Con la maleta lista", "Usaste el modo viaje sin soltar la rutina."),
     HUNDRED_TASKS("hundred_tasks", "Cien tareas", "Completaste 100 tareas en total."),
-    LEVEL_5("level_5", "Nivel 5", "Llegaste al nivel 5.");
+    LEVEL_5("level_5", "Nivel 5", "Llegaste al nivel 5."),
+    FIRST_WORKOUT("first_workout", "Primer entrenamiento", "Terminaste tu primer entrenamiento."),
+    WORKOUTS_10("workouts_10", "Diez entrenos", "Completaste 10 entrenamientos."),
+    WORKOUTS_50("workouts_50", "Cincuenta entrenos", "Completaste 50 entrenamientos."),
+    FIRST_RECORD("first_record", "Marca personal", "Superaste tu mejor marca en un ejercicio."),
+    GOAL_WEEK("goal_week", "Semana cumplida", "Cumpliste tu objetivo semanal de entrenos."),
+    GOAL_WEEKS_4("goal_weeks_4", "Un mes de constancia", "4 semanas seguidas cumpliendo tu objetivo."),
+    TONNE_CLUB("tonne_club", "Diez toneladas", "Moviste 10 000 kg en total."),
+    ALARM_CHECKED("alarm_checked", "Alarma a prueba", "Comprobaste que tu alarma llega a su hora.");
 }
 
 object Achievements {
@@ -96,5 +114,13 @@ object Achievements {
         Achievement.TRAVELER -> p.tripsStarted >= 1
         Achievement.HUNDRED_TASKS -> p.tasksCompleted >= 100
         Achievement.LEVEL_5 -> Levels.levelFor(p.xp) >= 5
+        Achievement.FIRST_WORKOUT -> p.workouts >= 1
+        Achievement.WORKOUTS_10 -> p.workouts >= 10
+        Achievement.WORKOUTS_50 -> p.workouts >= 50
+        Achievement.FIRST_RECORD -> p.personalRecords >= 1
+        Achievement.GOAL_WEEK -> p.goalWeeks >= 1
+        Achievement.GOAL_WEEKS_4 -> p.bestGoalWeekStreak >= 4
+        Achievement.TONNE_CLUB -> p.workoutVolumeKg >= 10_000L
+        Achievement.ALARM_CHECKED -> p.alarmTestsPassed >= 1
     }
 }

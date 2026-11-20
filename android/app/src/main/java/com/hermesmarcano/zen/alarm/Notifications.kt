@@ -18,6 +18,8 @@ object Notifications {
     const val CHANNEL_FALLBACK = "zen_ringing_fallback"
     const val ID_RINGING = 1001
     const val ID_FALLBACK = 1002
+    const val CHANNEL_DIAGNOSTIC = "zen_diagnostic"
+    const val ID_DIAGNOSTIC = 1003
 
     fun createChannels(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
@@ -29,6 +31,12 @@ object Notifications {
                 setSound(null, null)
                 enableVibration(false)
                 lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+            },
+        )
+        manager.createNotificationChannel(
+            NotificationChannel(CHANNEL_DIAGNOSTIC, "Prueba de alarma", NotificationManager.IMPORTANCE_DEFAULT).apply {
+                description = "Resultado de la prueba de 1 minuto de la alarma."
+                enableVibration(true)
             },
         )
         // Plan B si el sistema no deja arrancar el servicio: que al menos suene con el tono de alarma del sistema.
@@ -77,6 +85,30 @@ object Notifications {
                 .notify(ID_FALLBACK, ringing(context, CHANNEL_FALLBACK))
         } catch (_: SecurityException) {
             // Sin permiso de notificaciones ya no queda nada más que intentar.
+        }
+    }
+
+    /** Aviso del resultado de la prueba de alarma (llegó a tiempo, tarde…). */
+    fun postDiagnostic(context: Context, title: String, text: String) {
+        val open = PendingIntent.getActivity(
+            context, 2,
+            Intent(context, com.hermesmarcano.zen.ui.MainActivity::class.java)
+                .putExtra(com.hermesmarcano.zen.ui.MainActivity.EXTRA_ROUTE, com.hermesmarcano.zen.ui.MainActivity.ROUTE_RELIABILITY)
+                .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val notification = NotificationCompat.Builder(context, CHANNEL_DIAGNOSTIC)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(title)
+            .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+            .setAutoCancel(true)
+            .setContentIntent(open)
+            .build()
+        try {
+            context.getSystemService(NotificationManager::class.java).notify(ID_DIAGNOSTIC, notification)
+        } catch (_: SecurityException) {
+            // Sin permiso de notificaciones el resultado se ve igualmente dentro de la app.
         }
     }
 

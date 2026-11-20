@@ -7,7 +7,10 @@ object GameMessages {
     fun describe(events: GameEvents): List<String> {
         val out = mutableListOf<String>()
         if (events.mitDone) out += "Prioritaria cumplida" + if (events.xpGained > 0) " · +${events.xpGained} XP" else ""
-        else if (events.xpGained > 0) out += "+${events.xpGained} XP"
+        else if (events.xpGained > 0 && !events.workoutDone) out += "+${events.xpGained} XP"
+        if (events.workoutDone) out += "Entrenamiento completado" + if (events.xpGained > 0) " · +${events.xpGained} XP" else ""
+        if (events.records > 0) out += if (events.records == 1) "Marca personal en 1 ejercicio" else "Marcas personales en ${events.records} ejercicios"
+        if (events.weeklyGoalMet) out += "Objetivo semanal cumplido"
         if (events.completeDay) out += "Día completo: despertaste y cumpliste lo importante"
         if (events.perfectDay) out += "Día redondo: todas las tareas hechas"
         if (events.leveledUp) out += "Nivel ${events.levelAfter}: ${Levels.title(events.levelAfter)}"

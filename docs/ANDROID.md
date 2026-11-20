@@ -52,7 +52,9 @@ todos los APK se firman con la misma clave (`android/app/zen-sideload.jks`).
   lineal el "15 %" eran solo −16 dB y en un tono agudo seguía sonando fuerte; ahora son −28 dB.
   Al coger el teléfono baja a ~60 % del nivel inicial ("un poco") y, si se deja quieto sin apagar, sube.
 - **Al despertar**: al verificar el ancla suena un sonido de éxito (Campanilla, Fanfarria, Moneda,
-  Cuenco, o un archivo propio, cortado a 10 s) y aparece una pantalla con el tiempo que tardaste y
+  Cuenco, o un archivo propio, cortado a 10 s) al **20 % del máximo** (sonoridad percibida, también en
+  "Probar" y para archivos propios; arranca 350 ms después para que el servicio devuelva antes el
+  volumen de alarmas del usuario) y aparece una pantalla con el tiempo que tardaste y
   tu **racha**. La racha solo cuenta llegar al ancla (QR o foto); el código de respaldo no suma ni
   rompe; los días sin alarma programada no la cortan (una alarma de lunes a viernes no se rompe el
   fin de semana). Es deliberadamente sobria: un número y un mensaje en 3, 7, 14, 30, 60, 100 y 365 días.
@@ -61,8 +63,33 @@ todos los APK se firman con la misma clave (`android/app/zen-sideload.jks`).
   Hoy / Mañana, y "traer a hoy" las pendientes de días anteriores.
 - **Modo viaje**: pausar las alarmas unos días (la racha no se rompe) o apagarlas en otro ancla (un QR de
   repuesto, una foto del hotel). Cuenta desde la próxima alarma.
-- **Progreso**: XP, niveles, racha de despertar y de tarea prioritaria, y 13 logros.
+- **Entreno** (pestaña *Entreno*, inspirada en Hevy): rutinas por día **sin atar al día de la semana** (la app
+  propone la siguiente en la rotación; se salta un día y sigue tocando la misma). Cada serie anota **kg × repeticiones**
+  (o solo repeticiones, o tiempo), con lo de la última vez ya puesto; calentamientos, RPE 6–10, notas, **supersets**,
+  ejercicios propios y una biblioteca de ~55 ejercicios. **Cronómetro de descanso** entre series (por ejercicio, ±15 s, saltar):
+  se guarda la hora de fin, así que sobrevive a que Android cierre la app; avisa con una alarma exacta
+  (`USE_EXACT_ALARM`, `RestTimer`/`RestReceiver`), una notificación con cuenta atrás y un sonido corto a nivel bajo
+  (`VolumeCurve.REST_LEVEL`) por el canal de notificaciones (respeta el modo silencio). Además: calculadora de discos
+  (barra de 20/15/10 kg), récords personales (peso máximo, 1RM estimada Epley, mejor serie), gráficas por ejercicio,
+  resumen semanal y objetivo de días por semana. El historial vive en `workouts.json` (la sesión en curso, en
+  `active_workout.json`, para no reescribir años de historial en cada serie) y se **exporta/importa como CSV** (la app no
+  usa la copia de seguridad de Android). Unidades: kg.
+  - **Juego**: un entrenamiento que cuenta (≥ 3 series de trabajo y ≥ 5 min) da +40 XP el primero de cada día,
+    +5 XP por ejercicio con récord (máx. 3), +50 XP al cumplir el objetivo semanal (una vez por semana) y 7 logros
+    (primer entreno, 10, 50, primera marca, semana cumplida, 4 semanas seguidas, 10 toneladas). Sin castigos ni
+    avisos de pérdida: la racha semanal solo se muestra, no se amenaza.
+  - Una sesión que se olvidó cerrar solo cuenta hasta 15 min después de la última serie.
+- **Progreso**: XP, niveles, racha de despertar y de tarea prioritaria, estadísticas de entreno y 20 logros.
   Análisis completo de UX y gamificación en [`ANDROID-UX-GAMIFICACION.md`](ANDROID-UX-GAMIFICACION.md).
+- **Fiabilidad de la alarma** (Alarmas → "¿Suena a su hora?", o Ajustes): `core/AlarmHealth` + `data/AlarmLog` guardan
+  en `alarm_log.json` qué pasó con cada alarma (programada, recibida con su retraso, descartada, perdida, reprogramada).
+  Una alarma activa que pasó su hora hace más de 5 min sin que el sistema entregara el aviso se anota como **perdida** y se
+  reprograma al abrir la app (tras 15 s, por si el sistema aún entrega un aviso retrasado); la tarjeta deja de decir
+  "suena en menos de 1 min" para una alarma ya vencida y la cuenta atrás se relee al volver a la app. La pantalla
+  *Fiabilidad* tiene una **prueba de 1 minuto** (mismo camino `AlarmManager → AlarmReceiver`, sin sonar de verdad; no comprueba el
+  sonido ni la pantalla de apagado), el diálogo del sistema para exentar a ZEN del ahorro de batería, accesos a *Inicio
+  automático* y *Sin restricciones* de Xiaomi/Redmi/POCO y el registro. Pasar la prueba la primera vez da el logro
+  "Alarma a prueba" (sin XP).
 - **Reprogramación**: `BootReceiver` recalcula alarmas tras reinicio, cambio de hora/zona o
   actualización. Una alarma de una sola vez que ya pasó (teléfono apagado) se desactiva en vez
   de sonar al día siguiente.
@@ -102,6 +129,9 @@ privada aparte (nunca en el repositorio) y distribuir como AAB.
 
 ## Limitaciones conocidas
 
+- Xiaomi/Redmi/POCO (MIUI/HyperOS) y otros fabricantes congelan las apps en segundo plano por la noche y pueden entregar la alarma tarde o
+  nunca si ZEN no está exenta del ahorro de batería y con el inicio automático activado. ZEN no puede saltarse eso: por eso existe la prueba
+  y el registro (ver *Fiabilidad de la alarma*).
 - Si el usuario *fuerza el cierre* de la app desde Ajustes, Android cancela sus alarmas hasta
   que vuelva a abrirla. No se puede evitar sin ser app de sistema.
 - Tras un reinicio, las alarmas se reprograman cuando el usuario desbloquea el teléfono por
@@ -115,12 +145,14 @@ privada aparte (nunca en el repositorio) y distribuir como AAB.
 - Sin acelerómetro el volumen simplemente sube de forma continua.
 - El bloqueo de apps de Android vive en la **capa inteligente** (rama del Xiaomi; ver
   [`XIAOMI-LAYER.md`](XIAOMI-LAYER.md)): límites de tiempo, franjas prohibidas y bloqueos con fricción. En iOS aún no está terminado.
+- `USE_EXACT_ALARM` es válido para el APK por sideload; si algún día se publica en Google Play habrá que justificarlo (la app es de alarmas) o pedir el permiso especial.
 
 ## Pendiente de validar en dispositivo
 
 - **Audio**: el simulador de pruebas no tiene audio nativo, así que `AudioTrack`/`MediaPlayer` solo se
   prueban en lo que no suena (que no lancen, que el nivel se convierta bien, que los archivos rotos
-  caigan al plan B). Cómo *suena* de verdad (volumen inicial, tonos, archivo propio) hay que oírlo.
+  caigan al plan B). Cómo *suena* de verdad (volumen inicial, tonos, archivo propio, aviso de fin de descanso) hay que oírlo.
+- **Entreno**: el aviso de descanso con la pantalla apagada y el ahorro de batería de cada fabricante, y escribir con el teclado numérico (coma o punto decimal).
 
 Estimaciones sin medir en un teléfono real:
 

@@ -40,6 +40,16 @@ class VolumeCurveTest {
         assertEquals(0f, VolumeCurve.gain(Float.NaN), 0f)
     }
 
+    /** Pedido del usuario: el "tirín" de éxito suena al 20 % del máximo, no a tope. */
+    @Test fun theSuccessSoundPlaysAtTwentyPercent() {
+        assertEquals(0.20f, VolumeCurve.COMPLETION_LEVEL, 0f)
+        val gain = VolumeCurve.gain(VolumeCurve.COMPLETION_LEVEL)
+        assertTrue("ganancia $gain", gain in 0.05f..0.08f)
+        assertTrue(VolumeCurve.decibels(VolumeCurve.COMPLETION_LEVEL) < -20f)
+        // Muy lejos de la ganancia máxima.
+        assertTrue(gain < 0.1f)
+    }
+
     @Test fun startLevelsTheUserCanPickAreAllQuiet() {
         for (percent in listOf(10, 15, 20, 30)) assertTrue("$percent %", VolumeCurve.gain(percent / 100f) < 0.15f)
     }

@@ -7,7 +7,9 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.util.Log
+import com.hermesmarcano.zen.core.AlarmHealth
 import com.hermesmarcano.zen.data.AlarmEntity
+import com.hermesmarcano.zen.zenApp
 import com.hermesmarcano.zen.ui.MainActivity
 
 /**
@@ -38,8 +40,11 @@ object AlarmScheduler {
         )
         try {
             manager.setAlarmClock(AlarmManager.AlarmClockInfo(atMillis, showIntent), firePendingIntent(context, alarmId))
+            val kind = if (alarmId == AlarmHealth.SELF_TEST_ID) AlarmHealth.Kind.TEST_SCHEDULED else AlarmHealth.Kind.SCHEDULED
+            context.zenApp.alarmLog.record(AlarmHealth.Event(System.currentTimeMillis(), kind, alarmId, atMillis))
         } catch (e: SecurityException) {
             Log.e(TAG, "El sistema rechazó programar la alarma $alarmId", e)
+            context.zenApp.alarmLog.record(AlarmHealth.Event(System.currentTimeMillis(), AlarmHealth.Kind.DISCARDED, alarmId, atMillis, "el sistema rechazó programarla"))
         }
     }
 

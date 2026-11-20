@@ -127,7 +127,10 @@ la fase de revisión antes de cada commit (el CI `android.yml` repite lo mismo).
   sobrios y sin patrones oscuros: sin mascotas ni colores de juego, sin clasificaciones, **sin castigos ni
   avisos de "vas a perder tu racha"**, XP con tope diario, y reglas justas (días sin alarma y pausas de
   viaje no rompen la racha; el código de respaldo ni suma ni rompe). Ver `docs/ANDROID-UX-GAMIFICACION.md`.
-  No añadir más gamificación sin que se pida.
+  **Regla del usuario (vigente): toda feature nueva debe llevar gamificación** (XP con tope diario, logros,
+  mensajes de progreso, metas opcionales), siempre con las mismas reglas sobrias: sin castigos, sin avisos de
+  pérdida, sin clasificaciones ni mascotas, y sin XP por acciones triviales o repetibles a voluntad. La lógica
+  de XP/logros vive en `core/` (`XpRules`, `Achievement`) y se prueba en JVM.
 - Tareas: hasta 10 por día, la prioridad la da la **posición** (1 prioritaria · 3 medias · 6 bajas) y se
   reordena arrastrando (`sh.calvin.reorderable`). Solo se completan las de hoy.
 - Modo viaje: pausa con fecha o ancla alternativo; el primer día cuenta desde la **próxima alarma**
@@ -135,6 +138,10 @@ la fase de revisión antes de cada commit (el CI `android.yml` repite lo mismo).
 - Todo nivel de volumen se expresa como sonoridad *percibida* (0..1) y pasa por `VolumeCurve` antes de
   llegar a un reproductor; nunca usar el nivel como ganancia lineal (causaba que "15 %" sonara fuerte).
 - `zen-sideload.jks` es una clave pública solo para sideload; nunca para Google Play.
+- Entrenamientos (pestaña *Entreno*, inspirada en Hevy): rutinas por día **sin atar al día de la semana** (la
+  app propone la siguiente en la rotación), series con peso (kg) × repeticiones, temporizador de descanso entre
+  series (hora de fin guardada, aviso con `VolumeCurve` a nivel bajo), RPE, supersets, notas, calculadora de
+  discos, gráficas y resumen semanal. Historial en archivo propio (`WorkoutRepository`), con exportación CSV.
 - **Capa inteligente del Xiaomi** (`layer/`, ver `docs/XIAOMI-LAYER.md`): todo apagado por defecto, visible y con mínimo privilegio.
   Reglas que no se rompen: el cerebro puede restringir pero no relajar; aflojar un compromiso tarda 24 h; nunca se envía un mensaje
   sin aprobación del usuario (y como mucho una vez); Ajustes, el teléfono y ZEN nunca se bloquean (`NeverBlock`); título y cuerpo de

@@ -33,33 +33,10 @@ class StateRepository(private val file: File) {
         return next
     }
 
-    private fun load(): ZenState {
-        if (!file.exists()) return ZenState()
-        return try {
-            StateJson.decode(file.readText(Charsets.UTF_8))
-        } catch (_: Exception) {
-            // JSONException, IOException o un valor fuera de rango: apartar el archivo para no perderlo.
-            try {
-                file.copyTo(File(file.parentFile, file.name + ".corrupt"), overwrite = true)
-                file.delete()
-            } catch (_: Exception) {
-                // Mejor arrancar vacío que no arrancar.
-            }
-            ZenState()
-        }
-    }
+    private fun load(): ZenState =
+        if (!file.exists()) ZenState() else AtomicFiles.readOrQuarantine(file) { StateJson.decode(it) } ?: ZenState()
 
-    private fun write(state: ZenState) {
-        val parent = file.parentFile
-        if (parent != null && !parent.exists() && !parent.mkdirs()) throw IOException("No se pudo crear $parent")
-        val temp = File(parent, file.name + ".tmp")
-        temp.writeText(StateJson.encode(state), Charsets.UTF_8)
-        if (!temp.renameTo(file)) {
-            // Algunos sistemas de archivos no sustituyen al renombrar.
-            file.delete()
-            if (!temp.renameTo(file)) throw IOException("No se pudo guardar el estado")
-        }
-    }
+    private fun write(state: ZenState) = AtomicFiles.write(file, StateJson.encode(state))
 }
 
 internal object StateJson {
@@ -130,6 +107,16 @@ internal object StateJson {
         .put("perfectDayBonusDay", p.perfectDayBonusDay ?: JSONObject.NULL)
         .put("achievements", JSONObject().also { o -> p.achievements.forEach { (k, v) -> o.put(k, v) } })
         .put("pausedRanges", JSONArray().also { a -> p.pausedRanges.forEach { a.put(JSONObject().put("from", it.from).put("to", it.to)) } })
+        .put("workouts", p.workouts)
+        .put("workoutVolumeKg", p.workoutVolumeKg)
+        .put("personalRecords", p.personalRecords)
+        .put("workoutXpDay", p.workoutXpDay ?: JSONObject.NULL)
+        .put("goalBonusWeek", p.goalBonusWeek ?: JSONObject.NULL)
+        .put("goalWeeks", p.goalWeeks)
+        .put("goalWeekStreak", p.goalWeekStreak)
+        .put("bestGoalWeekStreak", p.bestGoalWeekStreak)
+        .put("lastGoalWeek", p.lastGoalWeek ?: JSONObject.NULL)
+        .put("alarmTestsPassed", p.alarmTestsPassed)
 
     private fun decodeProgress(json: JSONObject?): Progress {
         if (json == null) return Progress()
@@ -155,6 +142,16 @@ internal object StateJson {
             perfectDayBonusDay = longOrNull("perfectDayBonusDay"),
             achievements = achievements,
             pausedRanges = ranges,
+            workouts = json.optInt("workouts").coerceAtLeast(0),
+            workoutVolumeKg = json.optLong("workoutVolumeKg").coerceIn(0L, 1_000_000_000L),
+            personalRecords = json.optInt("personalRecords").coerceAtLeast(0),
+            workoutXpDay = longOrNull("workoutXpDay"),
+            goalBonusWeek = longOrNull("goalBonusWeek"),
+            goalWeeks = json.optInt("goalWeeks").coerceAtLeast(0),
+            goalWeekStreak = json.optInt("goalWeekStreak").coerceAtLeast(0),
+            bestGoalWeekStreak = maxOf(json.optInt("bestGoalWeekStreak").coerceAtLeast(0), json.optInt("goalWeekStreak").coerceAtLeast(0)),
+            lastGoalWeek = longOrNull("lastGoalWeek"),
+            alarmTestsPassed = json.optInt("alarmTestsPassed").coerceAtLeast(0),
         )
     }
 
@@ -193,6 +190,7 @@ internal object StateJson {
         .put("completionSound", encodeSound(settings.completionSound))
         .put("startVolumePercent", settings.startVolumePercent)
         .put("taskHintSeen", settings.taskHintSeen)
+        .put("diagnosticsAckAt", settings.diagnosticsAckAt)
 
     private fun decodeSettings(json: JSONObject?): ZenSettings {
         val defaults = ZenSettings()
@@ -203,6 +201,7 @@ internal object StateJson {
             startVolumePercent = json.optInt("startVolumePercent", defaults.startVolumePercent)
                 .coerceIn(ZenSettings.MIN_START_VOLUME_PERCENT, ZenSettings.MAX_START_VOLUME_PERCENT),
             taskHintSeen = json.optBoolean("taskHintSeen", false),
+            diagnosticsAckAt = json.optLong("diagnosticsAckAt", 0L).coerceAtLeast(0L),
         )
     }
 

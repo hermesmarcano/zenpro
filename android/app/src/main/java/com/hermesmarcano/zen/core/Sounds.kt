@@ -193,3 +193,17 @@ object CompletionToneSynth {
         return b
     }
 }
+
+/** Aviso corto de "se acabó el descanso": dos notas suaves, sin bucle. Medio segundo, para no tapar la música. */
+object RestToneSynth {
+    const val DURATION_SECONDS = 0.7
+
+    fun samples(sampleRate: Int = 44_100): FloatArray {
+        val b = FloatArray((DURATION_SECONDS * sampleRate).toInt())
+        val soft = listOf(Synth.Partial(1.0, 1f), Synth.Partial(2.0, 0.2f))
+        Synth.note(b, sampleRate, 0.0, 0.3, 659.25, 0.8f, soft, attackSeconds = 0.01, tau = 0.12)
+        Synth.note(b, sampleRate, 0.22, 0.45, 880.0, 0.8f, soft, attackSeconds = 0.01, tau = 0.18)
+        Synth.normalize(b)
+        return b
+    }
+}

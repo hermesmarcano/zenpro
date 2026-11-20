@@ -144,6 +144,12 @@ class SoundFeatureTest {
         player.stop()
     }
 
+    @Test fun theSuccessSoundIsScaledToTwentyPercentForPresetsAndFiles() {
+        val player = CompletionPlayer(app)
+        assertEquals(VolumeCurve.gain(0.20f), player.gain, 1e-6f)
+        assertTrue("no puede sonar a tope", player.gain < 0.1f)
+    }
+
     @Test fun previewStartsAndStops() {
         val preview = SoundPreview(app)
         preview.playAlarm(SoundChoice.Preset("soft"), 0.15f)
