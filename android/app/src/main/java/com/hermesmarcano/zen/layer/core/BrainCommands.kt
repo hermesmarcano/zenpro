@@ -28,14 +28,18 @@ object CommandPolicy {
     // Red amplia a propósito: un aviso rechazado por «p.ej.» cuesta poco; uno con un enlace malo, mucho.
     private val link = Regex(
         "([a-z][a-z0-9+.\\-]*://|\\bwww\\.|\\b(mailto|tel|sms|intent|javascript|data|file):|" +
-            "\\b\\d{1,3}(\\.\\d{1,3}){3}\\b|[\\w\\-]+(\\.[\\w\\-]+)*\\.[a-z]{2,}\\b)",
+            "\\b\\d{1,3}(\\.\\d{1,3}){3}\\b|[\\p{L}\\p{N}_\\-]+(\\.[\\p{L}\\p{N}_\\-]+)*\\.\\p{L}{2,})",
         RegexOption.IGNORE_CASE,
     )
+    private val invisible = Regex("\\p{Cf}")
     private val defang = Regex("[\\[({]\\s*(\\.|dot|punto)\\s*[\\])}]", RegexOption.IGNORE_CASE)
 
     fun hasLink(text: String): Boolean {
         // NFKC: «．» de ancho completo → «.»; luego «[.]», «(dot)»… → «.».
-        val flat = defang.replace(java.text.Normalizer.normalize(text, java.text.Normalizer.Form.NFKC), ".")
+        val normalized = java.text.Normalizer.normalize(text, java.text.Normalizer.Form.NFKC)
+            .replace(invisible, "") // espacios de ancho cero y otros caracteres de formato: `evil\u200b.com`
+            .replace('\u3002', '.') // «。» (punto ideográfico), que NFKC no iguala a «.»
+        val flat = defang.replace(normalized, ".")
         return link.containsMatchIn(flat)
     }
 

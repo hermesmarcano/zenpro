@@ -1,5 +1,7 @@
 package com.hermesmarcano.zen.layer.data
 
+import com.hermesmarcano.zen.layer.core.softwareBox
+import com.hermesmarcano.zen.layer.core.CountingBox
 import com.hermesmarcano.zen.layer.core.AesGcmSecretBox
 import com.hermesmarcano.zen.layer.core.LayerState
 import com.hermesmarcano.zen.layer.core.SealedText
@@ -57,6 +59,46 @@ class SealedStateTest {
         LayerStateRepository(file(), box).update { it.copy(brainToken = token) }
         file().writeText(file().readText().replace("enc1:", "enc1:AAAA"))
         assertEquals("", LayerStateRepository(file(), box).current.brainToken)
+    }
+
+    @Test fun anUnchangedTokenIsNotSealedAgainOnEveryWrite() {
+        val counting = CountingBox()
+        val repo = LayerStateRepository(file(), counting)
+        repo.update { it.copy(brainUrl = "https://brain.example.com", brainToken = token) }
+        val sealsAfterSaving = counting.seals
+        repeat(5) { n -> repo.update { it.copy(deviceId = "d$n") } }
+        assertEquals("el uso diario, los bloqueos… no pasan por el Keystore", sealsAfterSaving, counting.seals)
+        counting.down = true
+        repo.update { it.copy(deviceId = "con-el-keystore-caido") } // un fallo pasajero no impide guardar lo que no toca al token
+        assertEquals("con-el-keystore-caido", repo.current.deviceId)
+    }
+
+    @Test fun aTransientKeystoreFailureAtStartDoesNotEraseTheToken() {
+        val inner = softwareBox()
+        LayerStateRepository(file(), CountingBox(inner)).update { it.copy(brainUrl = "https://brain.example.com", brainToken = token) }
+
+        val down = CountingBox(inner).apply { down = true }
+        val repo = LayerStateRepository(file(), down)
+        assertEquals("ahora mismo no se puede abrir", "", repo.current.brainToken)
+        repo.update { it.copy(deviceId = "otro-cambio") }
+        assertTrue("el token cifrado sigue en el archivo aunque se escriba otro cambio", file().readText().contains("enc1:"))
+
+        down.down = false // vuelve el Keystore
+        repo.update { it.copy(deviceId = "ya-vuelve") }
+        assertEquals("y el siguiente cambio lo recupera", token, repo.current.brainToken)
+        assertEquals(token, LayerStateRepository(file(), CountingBox(inner)).current.brainToken)
+    }
+
+    @Test fun anUnreadableTokenIsDroppedWhenTheBrainIsRemoved() {
+        val inner = softwareBox()
+        LayerStateRepository(file(), CountingBox(inner)).update { it.copy(brainUrl = "https://brain.example.com", brainToken = token) }
+        val down = CountingBox(inner).apply { down = true }
+        val repo = LayerStateRepository(file(), down)
+        repo.update { it.copy(brainUrl = "", brainToken = "") } // «Quitar cerebro»
+        assertFalse(file().readText().contains("enc1:"))
+        down.down = false
+        repo.update { it.copy(deviceId = "x") }
+        assertEquals("", repo.current.brainToken)
     }
 
     @Test fun ifSealingFailsTheChangeFailsAndNothingIsWrittenInThePlain() {

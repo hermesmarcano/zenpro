@@ -19,30 +19,42 @@ import javax.crypto.SecretKey
 object LayerSecrets {
     /** Las pruebas de Robolectric (que no tienen Keystore) lo sustituyen por una clave de software. */
     @Volatile
-    internal var factory: () -> SecretBox = { AesGcmSecretBox(KeystoreKey()::get) }
+    internal var factory: () -> SecretBox = {
+        val key = KeystoreKey()
+        AesGcmSecretBox(key::forSealing, key::forOpening)
+    }
 
     fun create(): SecretBox = factory()
 }
 
 internal class KeystoreKey(private val alias: String = ALIAS) {
-    @Volatile
-    private var cached: SecretKey? = null
+    private fun store(): KeyStore = KeyStore.getInstance(PROVIDER).apply { load(null) }
 
+    /**
+     * Para ABRIR: la clave que ya existe, o `null` si ya no está (lo cifrado con ella es irrecuperable). Nunca la borra ni la
+     * crea: un fallo pasajero del Keystore (lanza) no debe destruir una clave buena ni, con ella, todo lo guardado.
+     */
+    fun forOpening(): SecretKey? = store().getKey(alias, null) as? SecretKey
+
+    /**
+     * Para CIFRAR: la que existe o una nueva. Solo si la clave no se puede usar dos veces seguidas se da por perdida
+     * (p. ej. invalidada al cambiar el bloqueo de pantalla), se borra y se crea otra: lo cifrado con la vieja ya era irrecuperable.
+     */
     @Synchronized
-    fun get(): SecretKey {
-        cached?.let { return it }
-        return loadOrCreate().also { cached = it }
+    fun forSealing(): SecretKey {
+        val store = store()
+        repeat(2) {
+            try {
+                return (store.getKey(alias, null) as? SecretKey) ?: create()
+            } catch (_: UnrecoverableKeyException) {
+                // se reintenta una vez
+            }
+        }
+        store.deleteEntry(alias)
+        return create()
     }
 
-    private fun loadOrCreate(): SecretKey {
-        val store = KeyStore.getInstance(PROVIDER).apply { load(null) }
-        val existing = try {
-            store.getKey(alias, null) as? SecretKey
-        } catch (_: UnrecoverableKeyException) {
-            store.deleteEntry(alias) // clave invalidada (p. ej. tras cambiar el bloqueo de pantalla): se crea otra
-            null
-        }
-        if (existing != null) return existing
+    private fun create(): SecretKey {
         val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, PROVIDER)
         generator.init(
             KeyGenParameterSpec.Builder(alias, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)

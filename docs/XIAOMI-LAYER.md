@@ -52,7 +52,8 @@ de ZEN que se publicará, y por eso están separadas de arriba abajo:
    cuerpo de una notificación se revisan **juntos**: un «Código de verificación» en el título oculta el número del cuerpo.
 4. **El cerebro puede restringir, nunca relajar**: puede proponer una respuesta, bloquear una app (máx. 24 h),
    pausar la observación o avisar. No puede quitar un bloqueo ni enviar un mensaje. Y aun así está acotado: **solo bloquea apps
-   que tú ya pusiste bajo una regla en «Límites»** (sin regla, no toca la app), con un máximo de 3 bloqueos y 6 avisos por hora.
+   que tú ya pusiste bajo una regla que bloquea en «Límites»** (un límite que bloquea al llegar, o una franja prohibida; una regla que
+   solo avisa no vale, y sin regla no toca la app), con un máximo de 3 bloqueos, 6 avisos y 10 borradores por hora.
 5. **Los compromisos tienen fricción**: endurecer un límite vale al instante; **aflojarlo o quitarlo tarda 24 h**.
    Soltar un bloqueo exige esperar un minuto y escribir un motivo, solo da un *pase* de 15 minutos y máximo 3 al día.
 6. **Mínimo privilegio**: no pide SMS, contactos, ubicación, llamadas, almacenamiento, superposición ni
@@ -131,9 +132,9 @@ Cuerpo `audio/wav` (16 kHz, 16 bits, mono, **como mucho 29 s**: el servidor rech
 
 - `id` es obligatorio y se usa para **no ejecutar dos veces** la misma orden (la capa recuerda los últimos 500).
 - `draft_reply` crea un **borrador pendiente** (notificación con «Enviar / Descartar»); nunca envía.
-- `block`: 1–1440 minutos; se ignora para apps protegidas **y para toda app que no tenga una regla en «Límites»**. `pause`: 1–1440
+- `block`: 1–1440 minutos; se ignora para apps protegidas **y para toda app que no tenga una regla que bloquee en «Límites»**. `pause`: 1–1440
   minutos. `notify`: título de hasta 60 y texto de hasta 200 caracteres, **sin enlaces** (esquemas, `www.`, dominios, IP: se rechaza).
-- Límites de la propia app, aunque el servidor falle: 6 avisos y 3 bloqueos del cerebro por hora.
+- Límites de la propia app, aunque el servidor falle: 6 avisos, 3 bloqueos y 10 borradores del cerebro por hora.
 - Un tipo desconocido se salta (el cerebro puede ser más nuevo que el teléfono). Un `404` significa «este cerebro no manda órdenes»: es válido.
 
 ## Qué se guarda, dónde y cuánto
@@ -144,6 +145,9 @@ Cuerpo `audio/wav` (16 kHz, 16 bits, mono, **como mucho 29 s**: el servidor rech
   sale del teléfono) se cifran **el token del cerebro, el texto de los eventos en cola y el audio pendiente**. Si el Keystore falla
   no se guarda nada en claro: el cambio falla y la pantalla lo dice. Un token guardado en claro por una versión anterior se
   vuelve a escribir cifrado al abrir la capa.
+- **Un fallo pasajero no borra nada**: si el Keystore no responde *ahora* (distinto de «la clave ya no existe»), el token cifrado se
+  conserva en el archivo, el audio y los eventos en cola se quedan esperando y se reintenta; solo lo irrecuperable de verdad
+  (manipulado, o clave perdida) se descarta. Si el token no se puede abrir, la pantalla lo dice («vuelve a escribirlo»).
 - **Qué NO va cifrado, y por qué**: la **memoria** (`zen-layer.db`). Necesita búsqueda de texto completo, y cifrar el contenido
   la haría imposible (haría falta SQLCipher). Está protegida por el aislamiento de Android y por el cifrado de disco del teléfono,
   y se limita a 30 días. Por eso la cola cifrada protege el audio (que no existe en ningún otro sitio) y el token, pero no
@@ -160,6 +164,10 @@ Cuerpo `audio/wav` (16 kHz, 16 bits, mono, **como mucho 29 s**: el servidor rech
 Nada de esto se ha podido probar sin un dispositivo. Las pruebas cubren la lógica y el cableado de Android (Robolectric), no el
 comportamiento real de MIUI:
 
+- **Rendimiento del Keystore**: que cifrar un tramo de voz de 29 s (~1 MB) con la clave del Keystore del Note 8 (Keymaster 4) sea
+  razonable. Si fuera lento, habría que pasar a una clave de datos en memoria envuelta por el Keystore.
+- **Tailscale detrás de un CGNAT**: una dirección `100.64–127.x` sin Tailscale activo (p. ej. la red CGNAT de un operador) iría en
+  claro por `http://`; la app no puede distinguirlo. Con `https://` no pasa.
 - Que el servicio de accesibilidad **sobreviva** a la limpieza de memoria y a los reinicios de MIUI con los ajustes del paso 6, y que
   `WRITE_SECURE_SETTINGS` por ADB funcione en MIUI para reactivarlo.
 - Que `FLAG_SECURE`, campos de contraseña y apps con vistas «no importantes» se comporten como se espera al leer la pantalla.

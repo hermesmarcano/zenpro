@@ -6,6 +6,7 @@ import android.database.Cursor
 import android.database.DatabaseUtils
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
+import java.io.IOException
 import com.hermesmarcano.zen.layer.core.FtsQuery
 import com.hermesmarcano.zen.layer.core.LayerEvent
 import com.hermesmarcano.zen.layer.core.OutboxItem
@@ -158,6 +159,7 @@ class SqliteTimeline(
 
 /** Marca interna de un evento de la cola que ya no se pudo descifrar. */
 private const val UNREADABLE = "\u0000no-legible"
+private const val CLEANUP_PASSES = 5
 
 /**
  * Cola de envío persistente: sobrevive a que el proceso muera o se reinicie el teléfono. El texto de los eventos se
@@ -174,14 +176,23 @@ class SqliteOutbox(
     }
 
     override fun due(kind: OutboxItem.Kind, nowMs: Long, limit: Int): List<OutboxItem> {
-        val rows = query(
-            "kind = ? AND not_before <= ? ORDER BY created_at ASC LIMIT ?",
-            arrayOf(kind.name, nowMs.toString(), limit.coerceAtLeast(1).toString()),
-        )
-        // Un evento que ya no se puede descifrar (clave perdida o archivo manipulado) no sirve para nada: se descarta.
-        val (readable, lost) = rows.partition { it.payload != UNREADABLE }
-        if (lost.isNotEmpty()) remove(lost.map { it.id })
-        return readable
+        // Varias pasadas: si los primeros eran irrecuperables y se descartan, los siguientes (legibles) no esperan a otra vuelta.
+        repeat(CLEANUP_PASSES) {
+            val rows = try {
+                query(
+                    "kind = ? AND not_before <= ? ORDER BY created_at ASC LIMIT ?",
+                    arrayOf(kind.name, nowMs.toString(), limit.coerceAtLeast(1).toString()),
+                    decrypt = true,
+                )
+            } catch (_: IOException) {
+                return emptyList() // el Keystore no responde AHORA: no se descarta nada, se reintenta en la próxima pasada
+            }
+            // Solo lo irrecuperable de verdad (manipulado o con la clave perdida) se descarta.
+            val (readable, lost) = rows.partition { it.payload != UNREADABLE }
+            if (lost.isNotEmpty()) remove(lost.map { it.id })
+            if (readable.isNotEmpty() || lost.isEmpty()) return readable
+        }
+        return emptyList()
     }
 
     override fun markFailed(items: List<OutboxItem>, nowMs: Long, random: Double, rejected: Boolean): List<OutboxItem> {
@@ -222,23 +233,24 @@ class SqliteOutbox(
 
     override fun prune(nowMs: Long): List<OutboxItem> {
         val dropped = ArrayList<OutboxItem>()
-        dropped += query("created_at < ?", arrayOf((nowMs - maxAgeMs).toString()))
+        dropped += query("created_at < ?", arrayOf((nowMs - maxAgeMs).toString()), decrypt = false)
         val overflow = count() - dropped.size - maxItems
         if (overflow > 0) {
             val gone = dropped.map { it.id }.toSet()
-            dropped += query("1 = 1 ORDER BY created_at ASC LIMIT ?", arrayOf((overflow + gone.size).toString())).filter { it.id !in gone }.take(overflow)
+            dropped += query("1 = 1 ORDER BY created_at ASC LIMIT ?", arrayOf((overflow + gone.size).toString()), decrypt = false).filter { it.id !in gone }.take(overflow)
         }
         remove(dropped.map { it.id })
         return dropped
     }
 
     override fun clear(): List<OutboxItem> {
-        val all = query("kind = ?", arrayOf(OutboxItem.Kind.AUDIO.name))
+        val all = query("kind = ?", arrayOf(OutboxItem.Kind.AUDIO.name), decrypt = false)
         helper.writableDatabase.delete("outbox", null, null)
         return all
     }
 
-    private fun query(where: String, args: Array<String>): List<OutboxItem> =
+    /** [decrypt] solo hace falta para enviar: borrar o recortar no tiene por qué abrir nada (ni depender del Keystore). */
+    private fun query(where: String, args: Array<String>, decrypt: Boolean): List<OutboxItem> =
         helper.readableDatabase.rawQuery(
             "SELECT id, kind, payload, created_at, attempts, rejections, not_before FROM outbox WHERE $where",
             args,
@@ -247,7 +259,8 @@ class SqliteOutbox(
             while (c.moveToNext()) {
                 val kind = OutboxItem.Kind.entries.firstOrNull { it.name == c.getString(1) } ?: continue
                 val id = c.getString(0)
-                out += OutboxItem(id, kind, readPayload(id, kind, c.getString(2)), c.getLong(3), c.getInt(4), c.getInt(5), c.getLong(6))
+                val payload = if (decrypt) readPayload(id, kind, c.getString(2)) else c.getString(2)
+                out += OutboxItem(id, kind, payload, c.getLong(3), c.getInt(4), c.getInt(5), c.getLong(6))
             }
             out
         }
@@ -259,7 +272,7 @@ class SqliteOutbox(
     private fun readPayload(id: String, kind: OutboxItem.Kind, stored: String): String = when {
         kind != OutboxItem.Kind.EVENT -> stored
         !SealedText.isSealed(stored) -> stored // de una versión anterior: se envía y se borra
-        else -> secrets.open(stored, "outbox:$id") ?: UNREADABLE
+        else -> secrets.open(stored, "outbox:$id") ?: UNREADABLE // null = irrecuperable; si el Keystore falla, lanza IOException
     }
 
     private fun values(item: OutboxItem, includePayload: Boolean = true) = ContentValues().apply {

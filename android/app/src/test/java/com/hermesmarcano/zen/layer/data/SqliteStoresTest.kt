@@ -1,5 +1,6 @@
 package com.hermesmarcano.zen.layer.data
 
+import com.hermesmarcano.zen.layer.core.CountingBox
 import android.app.Application
 import android.content.ContentValues
 import android.content.Context
@@ -170,6 +171,37 @@ class SqliteOutboxTest {
     @Test fun anAudioItemKeepsItsFileNameInThePlain() {
         outbox.enqueue(item("s", 10, OutboxItem.Kind.AUDIO, "seg-x.wav"))
         assertEquals("seg-x.wav", storedPayload("s"))
+    }
+
+    @Test fun aKeystoreThatFailsRightNowNeverDiscardsAnything() {
+        val counting = CountingBox()
+        val flaky = SqliteOutbox(db, counting, maxItems = 10, maxAgeMs = 10 * DAY)
+        flaky.enqueue(item("a", 10))
+        flaky.enqueue(item("b", 20))
+        counting.down = true
+        assertTrue(flaky.due(OutboxItem.Kind.EVENT, 100, 10).isEmpty())
+        assertEquals("nada se borró por un fallo pasajero", 2, flaky.count())
+        counting.down = false
+        assertEquals(listOf("a", "b"), flaky.due(OutboxItem.Kind.EVENT, 100, 10).map { it.id })
+    }
+
+    @Test fun pruningAndClearingDoNotNeedTheKeystore() {
+        val counting = CountingBox()
+        val q = SqliteOutbox(db, counting, maxItems = 1, maxAgeMs = 10 * DAY)
+        q.enqueue(item("old", 0))
+        q.enqueue(item("new", 20 * DAY))
+        counting.down = true
+        assertEquals(listOf("old"), q.prune(20 * DAY).map { it.id })
+        q.clear()
+        assertEquals(0, q.count())
+    }
+
+    @Test fun unreadableRowsAtTheFrontDoNotStarveTheReadableOnes() {
+        val lost = SqliteOutbox(db, softwareBox(), maxItems = 10, maxAgeMs = 10 * DAY) // otra clave: lo suyo ya no se podrá abrir
+        lost.enqueue(item("l1", 1)); lost.enqueue(item("l2", 2)); lost.enqueue(item("l3", 3))
+        outbox.enqueue(item("good", 4))
+        assertEquals(listOf("good"), outbox.due(OutboxItem.Kind.EVENT, 100, 2).map { it.id })
+        assertEquals("lo irrecuperable se descartó", 1, outbox.count())
     }
 
     @Test fun anEventThatCannotBeDecryptedIsDiscardedInsteadOfBlockingTheQueue() {

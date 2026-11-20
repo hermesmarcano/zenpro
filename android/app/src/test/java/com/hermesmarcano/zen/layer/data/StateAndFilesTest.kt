@@ -1,5 +1,6 @@
 package com.hermesmarcano.zen.layer.data
 
+import com.hermesmarcano.zen.layer.core.CountingBox
 import com.hermesmarcano.zen.layer.core.BlockEntry
 import com.hermesmarcano.zen.layer.core.BlockReason
 import com.hermesmarcano.zen.layer.core.CaptureSettings
@@ -202,6 +203,22 @@ class AudioFilesTest {
         File(tmp.root, "audio/$other").copyTo(File(tmp.root, "audio/$copyName"))
         assertNull(audio.read(copyName))
         assertNull(audio.read("../x.wav"))
+    }
+
+    @Test fun aKeystoreThatFailsRightNowThrowsInsteadOfReportingTheAudioAsGone() {
+        val counting = CountingBox()
+        val audio = AudioFiles(File(tmp.root, "audio"), counting)
+        val name = audio.save(segment)
+        counting.down = true
+        try {
+            audio.read(name)
+            fail("un fallo pasajero no puede parecer un audio perdido")
+        } catch (_: IOException) {
+        }
+        assertNotNull("y el archivo sigue ahí", audio.file(name))
+        counting.down = false
+        assertEquals(44 + 3_200, audio.read(name)!!.size)
+        assertNull(audio.read("seg-" + "9".repeat(8) + "-9999-9999-9999-" + "9".repeat(12) + ".wav")) // no existe: null
     }
 
     @Test fun aPlainWavFromAnOlderVersionIsStillReadable() {

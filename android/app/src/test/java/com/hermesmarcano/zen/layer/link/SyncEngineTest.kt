@@ -1,5 +1,6 @@
 package com.hermesmarcano.zen.layer.link
 
+import com.hermesmarcano.zen.layer.core.CountingBox
 import com.hermesmarcano.zen.layer.core.BlockActions
 import com.hermesmarcano.zen.layer.core.BlockEntry
 import com.hermesmarcano.zen.layer.core.BrainCommand
@@ -219,16 +220,47 @@ class SyncEngineTest {
         assertTrue(api.audioCalls.isEmpty())
     }
 
+    private fun engineWith(files: AudioFiles) {
+        audio = files
+        val pipeline = LayerPipeline(state, MemoryTimeline(), outbox, "own", { "{}" }, { now })
+        val applier = CommandApplier(state, BlockActions(state, UtcDays, "own"), DraftController(state, NullSender(), pipeline, { now }), notifier, "own", { now })
+        engine = SyncEngine(state, outbox, audio, api, applier, { now }, { 0.5 })
+    }
+
     @Test fun anAudioItemThatCannotBeDecryptedIsDroppedAndItsFileDeleted() {
         val name = audio.save(segment())
         outbox.enqueue(OutboxItem("s1", OutboxItem.Kind.AUDIO, name, now))
         // Otra clave (la del Keystore se perdió): el archivo ya no se puede abrir.
-        audio = AudioFiles(File(tmp.root, "audio"), softwareBox())
-        engine = SyncEngine(state, outbox, audio, api, CommandApplier(state, BlockActions(state, UtcDays, "own"), DraftController(state, NullSender(), LayerPipeline(state, MemoryTimeline(), outbox, "own", { "{}" }, { now }), { now }), notifier, "own", { now }), { now }, { 0.5 })
+        engineWith(AudioFiles(File(tmp.root, "audio"), softwareBox()))
         engine.run()
         assertEquals(0, outbox.count())
         assertTrue(api.audioCalls.isEmpty())
         assertNull(audio.file(name))
+    }
+
+    @Test fun aKeystoreThatFailsRightNowKeepsTheAudioAndRetriesLater() {
+        val box = CountingBox()
+        engineWith(AudioFiles(File(tmp.root, "audio"), box))
+        val name = audio.save(segment())
+        outbox.enqueue(OutboxItem("s1", OutboxItem.Kind.AUDIO, name, now))
+        box.down = true
+        val report = engine.run()
+        assertEquals(0, report.audioSent)
+        assertNotNull("el audio NO se borra por un fallo pasajero", audio.file(name))
+        assertEquals(1, outbox.count())
+        assertEquals(1, outbox.items.single().attempts)
+        box.down = false
+        now += 2 * HOUR
+        assertEquals(1, engine.run().audioSent)
+    }
+
+    @Test fun pausingInTheMiddleOfAPassStopsTheRestOfIt() {
+        for (i in 0 until 250) outbox.enqueue(event("e$i", now - 1_000_000 + i))
+        api.onPostEvents = { state.update { it.copy(capture = it.capture.copy(pausedUntilMs = now + HOUR)) } }
+        engine.run()
+        assertEquals("solo salió el primer lote", 1, api.eventCalls.size)
+        assertTrue("y no se pidieron órdenes", api.cursors.isEmpty())
+        assertEquals(150, outbox.count())
     }
 
     @Test fun anAudioNetworkFailureKeepsTheFile() {

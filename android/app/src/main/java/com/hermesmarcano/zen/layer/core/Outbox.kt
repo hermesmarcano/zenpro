@@ -109,6 +109,8 @@ object BrainUrl {
         if (parts.size != 4) return false
         val n = parts.map { it.toIntOrNull() ?: return false }
         if (n.any { it !in 0..255 }) return false
+        // «100.064.0.1» (ceros a la izquierda) puede leerse como octal en otros sitios: no se acepta.
+        if (parts.zip(n).any { (text, value) -> text != value.toString() }) return false
         return n[0] == 127 || (n[0] == 100 && n[1] in 64..127) // este teléfono, o Tailscale
     }
 }

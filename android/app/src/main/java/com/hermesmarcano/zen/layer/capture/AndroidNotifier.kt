@@ -21,6 +21,7 @@ import com.hermesmarcano.zen.layer.core.Notifier
 import com.hermesmarcano.zen.ui.MainActivity
 import java.text.DateFormat
 import java.util.Date
+import java.io.IOException
 
 /**
  * Los avisos de la capa. Tono sobrio: dicen un hecho y ofrecen una acción, sin reproches. Las respuestas en borrador
@@ -203,16 +204,30 @@ class LayerActionReceiver : BroadcastReceiver() {
             }
             ACTION_BLOCK_TODAY -> {
                 val pkg = intent.getStringExtra(EXTRA_PKG).orEmpty()
-                val blocked = runtime.blockActions.blockUntilEndOfDay(pkg, BlockReason.MANUAL, now)
+                val blocked = try {
+                    runtime.blockActions.blockUntilEndOfDay(pkg, BlockReason.MANUAL, now)
+                } catch (_: IOException) {
+                    runtime.notifier.notice("No se pudo bloquear", "No se pudo guardar el cambio. Inténtalo desde la app.")
+                    return
+                }
                 if (!blocked) runtime.notifier.notice("No se puede bloquear", "Esa app está protegida.")
             }
             ACTION_PAUSE -> {
                 val minutes = intent.getStringExtra(EXTRA_MINUTES)?.toIntOrNull()?.coerceIn(1, 24 * 60) ?: 60
-                runtime.state.update { it.copy(capture = it.capture.copy(pausedUntilMs = now + minutes * 60_000L)) }
+                try {
+                    runtime.state.update { it.copy(capture = it.capture.copy(pausedUntilMs = now + minutes * 60_000L)) }
+                } catch (_: IOException) {
+                    runtime.notifier.notice("No se pudo pausar", "No se pudo guardar el cambio. Inténtalo desde la app.")
+                }
             }
             ACTION_STOP_AUDIO -> {
-                runtime.state.update { it.copy(capture = it.capture.copy(ambientAudio = false)) }
+                // Primero se para el micrófono: que el ajuste no se pueda guardar no debe dejarlo grabando.
                 AmbientAudioService.stop(context)
+                try {
+                    runtime.state.update { it.copy(capture = it.capture.copy(ambientAudio = false)) }
+                } catch (_: IOException) {
+                    runtime.notifier.notice("Micrófono parado", "No se pudo guardar el ajuste: apágalo también desde la app.")
+                }
             }
         }
     }

@@ -29,14 +29,14 @@ _ALLOWED_KEYS = {
 # Es una red amplia a propósito: un aviso rechazado por «p.ej.» cuesta poco; uno con un enlace malo, mucho.
 _URL = re.compile(
     r"(?i)([a-z][a-z0-9+.\-]*://|\bwww\.|\b(mailto|tel|sms|intent|javascript|data|file):|"
-    r"\b\d{1,3}(\.\d{1,3}){3}\b|[\w\-]+(\.[\w\-]+)*\.[a-z]{2,}\b)"
+    r"\b\d{1,3}(\.\d{1,3}){3}\b|[\w\-]+(\.[\w\-]+)*\.[^\W\d_]{2,}\b)"
 )
 _DEFANG = re.compile(r"(?i)[\[\(\{]\s*(\.|dot|punto)\s*[\]\)\}]")
 
 
 def has_link(text: str) -> bool:
     """¿Parece llevar un enlace? Se normaliza antes (NFKC: «．» de ancho completo → «.»; «[.]» → «.»)."""
-    flat = _DEFANG.sub(".", unicodedata.normalize("NFKC", text))
+    flat = _DEFANG.sub(".", unicodedata.normalize("NFKC", text).replace("\u3002", "."))
     return _URL.search(flat) is not None
 
 

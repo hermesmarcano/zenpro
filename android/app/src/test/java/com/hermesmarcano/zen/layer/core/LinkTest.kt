@@ -128,6 +128,13 @@ class BrainUrlTest {
         }
     }
 
+    @Test fun leadingZerosInAnOctetAreNotAccepted() {
+        // «100.064.0.1» podría leerse como octal en otros sitios y apuntar a una dirección en claro distinta.
+        for (host in listOf("100.064.0.1", "127.000.000.001", "100.64.00.1")) {
+            assertEquals(host, BrainUrl.Error.CLEARTEXT_NOT_ALLOWED, errorOf("http://$host"))
+        }
+    }
+
     @Test fun addressesJustOutsideTheAllowedRangesAreRejected() {
         for (host in listOf("172.15.0.1", "100.63.255.255", "100.128.0.1", "192.169.0.1", "11.0.0.1", "126.0.0.1", "128.0.0.1", "evilts.net", "ts.net.evil.com")) {
             assertEquals(host, BrainUrl.Error.CLEARTEXT_NOT_ALLOWED, errorOf("http://$host"))

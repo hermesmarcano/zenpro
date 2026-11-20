@@ -24,7 +24,7 @@ Protocolo con el teléfono: [`docs/XIAOMI-LAYER.md`](../docs/XIAOMI-LAYER.md). E
 | La salida del modelo no es fiable | `json.loads` estricto (sin claves repetidas, sin NaN), `{"commands": [...]}`, máx. 3, **esquema estricto** por orden (campos exactos, tipos exactos, sin decimales), `reasoning_content` ignorado siempre |
 | El modelo no elige a quién se responde | `draft_reply` va a la conversación **del propio evento** (la fija el adaptador) y solo para notificaciones; nunca se envía solo (la persona lo aprueba en el teléfono) |
 | El modelo no elige el título de un aviso | Siempre «ZEN»; ≤ 200 caracteres y **sin enlaces** |
-| Bloqueos acotados | Solo apps de `ZEN_BLOCK_ALLOWLIST` (vacía por defecto) y nunca protegidas; clamp a `ZEN_BLOCK_MAX_MINUTES`; 3 por hora; **tope de minutos por día**. El teléfono además solo bloquea apps con regla en «Límites» |
+| Bloqueos acotados | Solo apps de `ZEN_BLOCK_ALLOWLIST` (vacía por defecto) y nunca protegidas; clamp a `ZEN_BLOCK_MAX_MINUTES`; 3 por hora; **tope de minutos por día**. El teléfono además solo bloquea apps con una regla que bloquea en «Límites» |
 | Pausas acotadas | Clamp, 2 por hora y **tope de minutos por día** (varias órdenes no se encadenan en una pausa permanente) |
 | Cortacircuitos | Respuestas no-JSON en ráfaga, bloqueos o pausas en ráfaga, o 5 intentos sospechosos (bloquear Ajustes, apps fuera de la lista…) en 10 min → alerta en la auditoría y **se deja de consultar al modelo 10 min** |
 | Coste y avalancha acotados | Tope de llamadas al modelo por hora y por día; tope de eventos aceptados por hora (429); cola acotada (503) |

@@ -9,6 +9,7 @@ import com.hermesmarcano.zen.layer.core.DraftStatus
 import com.hermesmarcano.zen.layer.core.LayerState
 import com.hermesmarcano.zen.layer.core.LayerStateStore
 import com.hermesmarcano.zen.layer.core.LimitRule
+import com.hermesmarcano.zen.layer.core.MemoizedSecretBox
 import com.hermesmarcano.zen.layer.core.PendingRule
 import com.hermesmarcano.zen.layer.core.SealedText
 import com.hermesmarcano.zen.layer.core.SecretBox
@@ -24,7 +25,16 @@ import org.json.JSONObject
  * que el estado de ZEN. Un archivo corrupto se aparta como `.corrupt` y se arranca limpio: la capa nunca debe
  * quedarse sin poder iniciar por un archivo roto.
  */
-class LayerStateRepository(private val file: File, private val secrets: SecretBox) : LayerStateStore {
+class LayerStateRepository(private val file: File, secrets: SecretBox) : LayerStateStore {
+    // El estado se reescribe a cada paso (uso diario, bloqueos, pausas…) y el token casi nunca cambia: se memoriza su texto
+    // cifrado para no pasar por el Keystore en cada escritura (ni desde el hilo principal ni con un fallo pasajero de este).
+    private val secrets: SecretBox = MemoizedSecretBox(secrets)
+
+    /**
+     * El token cifrado que ahora mismo no se ha podido abrir (el Keystore no respondió al arrancar). Se conserva tal cual
+     * en el archivo —no se pierde por escribir otro cambio— y se reintenta abrir en el siguiente `update`.
+     */
+    private var lockedToken = ""
     private val flow = MutableStateFlow(load())
     val state: StateFlow<LayerState> get() = flow
     override val current: LayerState get() = flow.value
@@ -32,11 +42,25 @@ class LayerStateRepository(private val file: File, private val secrets: SecretBo
     @Synchronized
     @Throws(IOException::class)
     override fun update(transform: (LayerState) -> LayerState): LayerState {
-        val next = transform(flow.value)
+        val next = transform(recovered(flow.value))
         if (next == flow.value) return next
         write(next)
+        // Con token nuevo, o sin cerebro (se quitó), el cifrado viejo ya no hace falta.
+        if (next.brainToken.isNotEmpty() || next.brainUrl.isEmpty()) lockedToken = ""
         flow.value = next
         return next
+    }
+
+    /** Si el token no se pudo abrir antes, se intenta de nuevo; `null` definitivo (clave perdida) lo descarta. */
+    private fun recovered(s: LayerState): LayerState {
+        if (lockedToken.isEmpty() || s.brainToken.isNotEmpty()) return s
+        val plain = try {
+            secrets.open(lockedToken, LayerStateJson.TOKEN_CONTEXT)
+        } catch (_: IOException) {
+            return s // sigue sin poder: se reintenta en el siguiente cambio
+        }
+        lockedToken = ""
+        return if (plain != null) s.copy(brainToken = plain) else s
     }
 
     private fun load(): LayerState {
@@ -44,11 +68,13 @@ class LayerStateRepository(private val file: File, private val secrets: SecretBo
         return try {
             val text = file.readText(Charsets.UTF_8)
             val loaded = LayerStateJson.decode(text, secrets)
+            val stored = LayerStateJson.storedToken(text)
+            if (loaded.brainToken.isEmpty() && SealedText.isSealed(stored)) lockedToken = stored
             // Un token guardado en claro por una versión anterior se vuelve a escribir ya cifrado.
             if (LayerStateJson.hasPlainToken(text)) {
                 try {
                     write(loaded)
-                } catch (_: IOException) {
+                } catch (_: Exception) {
                     // Sin poder cifrar se queda como estaba; se reintentará en el siguiente cambio.
                 }
             }
@@ -68,7 +94,9 @@ class LayerStateRepository(private val file: File, private val secrets: SecretBo
         val parent = file.parentFile
         if (parent != null && !parent.exists() && !parent.mkdirs()) throw IOException("No se pudo crear $parent")
         val temp = File(parent, file.name + ".tmp")
-        temp.writeText(LayerStateJson.encode(state, secrets), Charsets.UTF_8)
+        // Mientras el token cifrado esté sin poder abrirse (y el cerebro siga configurado), se vuelve a escribir tal cual.
+        val keep = if (state.brainToken.isEmpty() && state.brainUrl.isNotEmpty()) lockedToken else ""
+        temp.writeText(LayerStateJson.encode(state, secrets, keep), Charsets.UTF_8)
         if (!temp.renameTo(file)) {
             file.delete()
             if (!temp.renameTo(file)) throw IOException("No se pudo guardar el estado de la capa")
@@ -82,7 +110,14 @@ class LayerStateRepository(private val file: File, private val secrets: SecretBo
  */
 internal object LayerStateJson {
     const val VERSION = 1
-    private const val TOKEN_CONTEXT = "layer.brainToken"
+    const val TOKEN_CONTEXT = "layer.brainToken"
+
+    /** El texto del token tal como está en el archivo (cifrado o no), o «». */
+    fun storedToken(text: String): String = try {
+        JSONObject(text).optJSONObject("brain")?.optString("token", "").orEmpty()
+    } catch (_: Exception) {
+        ""
+    }
 
     /** ¿El archivo guarda un token sin cifrar? (Lo dejaba así la versión anterior; se corrige al cargar.) */
     fun hasPlainToken(text: String): Boolean = try {
@@ -93,7 +128,7 @@ internal object LayerStateJson {
     }
 
     /** Lanza `IOException` si hay token y no se puede cifrar: nunca se escribe en claro. */
-    fun encode(s: LayerState, secrets: SecretBox): String {
+    fun encode(s: LayerState, secrets: SecretBox, preservedToken: String = ""): String {
         val root = JSONObject().put("version", VERSION)
         root.put(
             "capture",
@@ -132,7 +167,7 @@ internal object LayerStateJson {
         )
         root.put(
             "brain",
-            JSONObject().put("url", s.brainUrl).put("token", if (s.brainToken.isEmpty()) "" else secrets.seal(s.brainToken, TOKEN_CONTEXT)).put("deviceId", s.deviceId).put("commandCursor", s.commandCursor)
+            JSONObject().put("url", s.brainUrl).put("token", if (s.brainToken.isEmpty()) preservedToken else secrets.seal(s.brainToken, TOKEN_CONTEXT)).put("deviceId", s.deviceId).put("commandCursor", s.commandCursor)
                 .put("seenCommandIds", JSONArray(s.seenCommandIds)).put("lastSyncOkAtMs", s.lastSyncOkAtMs ?: JSONObject.NULL)
                 .put("lastSyncError", s.lastSyncError),
         )
@@ -212,7 +247,11 @@ internal object LayerStateJson {
     /** Cifrado → se abre (o queda vacío si la clave ya no sirve: hay que volver a poner el token). Sin cifrar → versión anterior. */
     private fun openToken(stored: String, secrets: SecretBox): String = when {
         stored.isEmpty() -> ""
-        SealedText.isSealed(stored) -> secrets.open(stored, TOKEN_CONTEXT).orEmpty()
+        SealedText.isSealed(stored) -> try {
+            secrets.open(stored, TOKEN_CONTEXT).orEmpty()
+        } catch (_: IOException) {
+            "" // el Keystore no responde ahora: el repositorio conserva el texto cifrado y lo reintenta
+        }
         else -> stored
     }
 

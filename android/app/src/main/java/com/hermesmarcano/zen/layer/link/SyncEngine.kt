@@ -71,9 +71,12 @@ class SyncEngine(
         var reached = false
         var unauthorized = false
 
+        /** La pausa se vuelve a mirar en cada paso: si se pulsa «Pausar» a mitad de una pasada, esta se corta ahí. */
+        private fun paused() = state.current.capture.isPaused(clock())
+
         fun events() {
             repeat(MAX_BATCHES) {
-                if (unauthorized) return
+                if (unauthorized || paused()) return
                 val batch = outbox.due(OutboxItem.Kind.EVENT, clock(), OutboxPolicy.EVENT_BATCH)
                 if (batch.isEmpty()) return
                 when (val r = api.postEvents(cfg, batch)) {
@@ -125,9 +128,16 @@ class SyncEngine(
 
         fun audio() {
             repeat(MAX_AUDIO) {
-                if (unauthorized) return
+                if (unauthorized || paused()) return
                 val item = outbox.due(OutboxItem.Kind.AUDIO, clock(), OutboxPolicy.AUDIO_BATCH).firstOrNull() ?: return
-                val wav = audio.read(item.payload)
+                val wav = try {
+                    audio.read(item.payload)
+                } catch (_: IOException) {
+                    // El Keystore o el disco fallan ahora: el audio NO se borra, se reintenta más tarde.
+                    error = error ?: "No se pudo leer el audio guardado"
+                    outbox.markFailed(listOf(item), clock(), random(), rejected = false)
+                    return
+                }
                 if (wav == null) {
                     // El archivo ya no existe o no se puede descifrar (clave perdida): no hay nada que enviar.
                     audio.delete(item.payload)
@@ -157,7 +167,7 @@ class SyncEngine(
         }
 
         fun pullCommands(cursor: String) {
-            if (unauthorized) return
+            if (unauthorized || paused()) return
             val result = api.fetchCommands(cfg, cursor)
             when (val r = result.result) {
                 ApiResult.Ok -> {

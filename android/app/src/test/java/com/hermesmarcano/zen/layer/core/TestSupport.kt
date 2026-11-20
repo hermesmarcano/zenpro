@@ -5,6 +5,25 @@ import java.io.IOException
 /** Caja de cifrado de software para pruebas: cada llamada, una clave nueva. */
 internal fun softwareBox(): SecretBox = AesGcmSecretBox(SoftwareKeys.random().let { key -> { key } })
 
+/** Una caja de cifrado que cuenta usos y puede «caerse» (el Keystore no responde) sin perder la clave. */
+internal class CountingBox(private val inner: SecretBox = softwareBox()) : SecretBox {
+    var seals = 0
+    var opens = 0
+    var down = false
+
+    override fun sealBytes(plain: ByteArray, context: String): ByteArray {
+        if (down) throw IOException("Keystore caído")
+        seals++
+        return inner.sealBytes(plain, context)
+    }
+
+    override fun openBytes(sealed: ByteArray, context: String): ByteArray? {
+        if (down) throw IOException("Keystore caído")
+        opens++
+        return inner.openBytes(sealed, context)
+    }
+}
+
 internal const val MIN = 60_000L
 internal const val HOUR = 60 * MIN
 internal const val DAY = 24 * HOUR

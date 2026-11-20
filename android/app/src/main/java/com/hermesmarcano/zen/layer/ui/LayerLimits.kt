@@ -45,6 +45,7 @@ import java.util.Date
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import java.io.IOException
 
 /*
  * Los editores de esta pantalla son paneles DENTRO de ella, no ventanas emergentes. Es una decisión de diseño y de
@@ -306,7 +307,11 @@ private fun RelaxPanel(env: LayerEnv, pkg: String, label: String, onClose: () ->
     val remainingMs = if (requestedAt == 0L) RelaxPolicy.COOLDOWN_MS else (RelaxPolicy.COOLDOWN_MS - (now - requestedAt)).coerceIn(0, RelaxPolicy.COOLDOWN_MS)
     val waiting = requestedAt > 0L && remainingMs > 0
     val close = {
-        if (requestedAt > 0L) env.runtime.blockActions.cancelRelax(pkg)
+        try {
+            if (requestedAt > 0L) env.runtime.blockActions.cancelRelax(pkg)
+        } catch (_: IOException) {
+            // El cambio no se pudo guardar; la petición caduca sola. Cerrar el panel no debe tumbar la app.
+        }
         onClose()
     }
     Panel {
@@ -326,14 +331,25 @@ private fun RelaxPanel(env: LayerEnv, pkg: String, label: String, onClose: () ->
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             TextButton(
                 enabled = !waiting,
-                onClick = {
+                onClick = onClick@{
                     val t = env.now()
                     if (requestedAt == 0L) {
-                        env.runtime.blockActions.requestRelax(pkg, t)
+                        try {
+                            env.runtime.blockActions.requestRelax(pkg, t)
+                        } catch (_: IOException) {
+                            env.say("No se pudo guardar el cambio.")
+                            return@onClick
+                        }
                         requestedAt = t
                         now = t
                     } else {
-                        when (val result = env.runtime.blockActions.confirmRelax(pkg, reason, t)) {
+                        val result = try {
+                            env.runtime.blockActions.confirmRelax(pkg, reason, t)
+                        } catch (_: IOException) {
+                            env.say("No se pudo guardar el cambio.")
+                            return@onClick
+                        }
+                        when (result) {
                             is RelaxPolicy.Result.Granted -> {
                                 env.say("Pase de ${RelaxPolicy.EXTENSION_MS / 60_000} min para $label, hasta las ${formatTime(result.untilMs)}.")
                                 onClose()

@@ -34,17 +34,19 @@ class AudioFiles(private val dir: File, private val secrets: SecretBox) {
     }
 
     /**
-     * El WAV descifrado, o `null` si no existe o no se puede abrir (clave perdida, archivo manipulado). Un WAV sin cifrar
+     * El WAV descifrado; `null` si no existe o es irrecuperable (clave perdida, archivo manipulado); lanza `IOException` si ahora
+     * no se puede leer o descifrar (el Keystore o el disco fallan): hay que reintentar, no borrar. Un WAV sin cifrar
      * de una versión anterior (empieza por «RIFF») se acepta tal cual: se envía y se borra, sin quedarse.
      */
+    @Throws(IOException::class)
     fun read(name: String): ByteArray? {
         val bytes = try {
             file(name)?.readBytes()
-        } catch (_: IOException) {
+        } catch (_: java.io.FileNotFoundException) {
             null
         } ?: return null
         if (bytes.size > 4 && String(bytes, 0, 4, Charsets.US_ASCII) == "RIFF") return bytes
-        return secrets.openBytes(bytes, context(name))
+        return secrets.openBytes(bytes, context(name)) // null: irrecuperable; IOException: el Keystore no responde ahora
     }
 
     fun delete(name: String) {

@@ -136,7 +136,7 @@ class DraftControllerTest {
 class CommandApplierTest {
     private var now = 10 * HOUR
     // El cerebro solo puede bloquear apps que el usuario ya puso bajo una regla.
-    private val state = MemoryState(LayerState(capture = CaptureSettings(), limits = listOf(LimitRule("com.zhiliaoapp.musically", "TikTok", 0L))))
+    private val state = MemoryState(LayerState(capture = CaptureSettings(), limits = listOf(LimitRule("com.zhiliaoapp.musically", "TikTok", 45 * MIN, blockAtLimit = true))))
     private val timeline = MemoryTimeline()
     private val sender = FakeSender()
     private val notifier = RecordingNotifier()

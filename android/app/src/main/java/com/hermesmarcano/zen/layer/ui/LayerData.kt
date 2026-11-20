@@ -16,8 +16,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -170,8 +172,14 @@ internal fun BrainSection(env: LayerEnv, state: LayerState) {
     )
     OutlinedTextField(
         value = token, onValueChange = { token = it }, label = { Text("Token") }, singleLine = true,
-        visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth(),
+        visualTransformation = PasswordVisualTransformation(),
+        // Teclado de contraseña: sin sugerencias ni autocorrección que aprendan o envíen el token a un teclado en la nube.
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false),
+        modifier = Modifier.fillMaxWidth(),
     )
+    if (state.brainUrl.isNotBlank() && state.brainToken.isBlank()) {
+        Hint("Hay una dirección guardada pero no se puede usar el token (falta o no se pudo leer): vuelve a escribirlo y pulsa Guardar.")
+    }
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         OutlinedButton(onClick = {
             when (val result = BrainUrl.validate(url)) {
