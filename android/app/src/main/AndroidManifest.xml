@@ -21,7 +21,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <!-- (REQUEST_IGNORE_BATTERY_OPTIMIZATIONS ya está declarado arriba, con la alarma: la capa lo usa igual.) -->
     <!-- No se puede conceder desde la app: se declara para que `adb shell pm grant` pueda dárselo (reparación automática de la accesibilidad). -->
     <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" tools:ignore="ProtectedPermissions" />
 
